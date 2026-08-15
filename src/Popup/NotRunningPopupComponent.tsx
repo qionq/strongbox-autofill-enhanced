@@ -13,9 +13,15 @@ function NotRunningPopupComponent({ onRefresh }: NotRunningPopupComponentProps) 
   const [t] = useTranslation('global');
 
   return (
-    <Stack direction="column" justifyContent="center" alignItems="center" spacing={0} minWidth="400px" sx={{ m: 2, width: 300 }}>
+    <Stack
+      direction="column"
+      justifyContent="center"
+      alignItems="center"
+      spacing={0}
+      sx={{ width: 360, maxWidth: 360, height: '100%', boxSizing: 'border-box', overflowY: 'auto', px: 2, py: 1.5 }}
+    >
       <Box>
-        <SensorsOff color="disabled" sx={{ fontSize: 60 }} />
+        <SensorsOff color="disabled" sx={{ fontSize: 42 }} />
       </Box>
       <Box>
         <Typography variant="h5" align="center" sx={{ textOverflow: 'ellipsis', p: 0 }}>
@@ -30,7 +36,7 @@ function NotRunningPopupComponent({ onRefresh }: NotRunningPopupComponentProps) 
             </IconButton>
             <Button onClick={() => onLaunch(onRefresh)}>{t('not-running-popup-component.launch-strongbox')}</Button>
           </Box>
-          <HorizontalRuleTwoTone sx={{ width: '300px' }} />
+          <HorizontalRuleTwoTone sx={{ width: '100%' }} />
           <Box display="block" sx={{ display: 'flex', flexDirection: 'column' }}>
             <Box>
               <Typography variant="h6" align="center" sx={{ textOverflow: 'ellipsis', p: 0 }}>
@@ -55,7 +61,7 @@ function NotRunningPopupComponent({ onRefresh }: NotRunningPopupComponentProps) 
         </>
       ) : (
         <>
-          <HorizontalRuleTwoTone sx={{ width: '300px' }} />
+          <HorizontalRuleTwoTone sx={{ width: '100%' }} />
           <Typography variant="body2" align="left" sx={{ textOverflow: 'ellipsis', p: 0, pt: '13px' }}>
             {t('not-running-popup-component.message')}
           </Typography>

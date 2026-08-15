@@ -1,387 +1,132 @@
 import * as React from 'react';
-import MenuItem from '@mui/material/MenuItem';
+import { Badge, ChevronRightRounded, StarRounded } from '@mui/icons-material';
+import { Box, CircularProgress, IconButton, MenuItem, Typography } from '@mui/material';
 import { AutoFillCredential } from '../Messaging/Protocol/AutoFillCredential';
-import { Badge, MoreHoriz } from '@mui/icons-material';
-import { Box, Button, CircularProgress, IconButton, Menu, Tooltip, Typography } from '@mui/material';
 import { GetIconResponse } from '../Messaging/Protocol/GetIconResponse';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import FontDownloadOutlinedIcon from '@mui/icons-material/FontDownloadOutlined';
-
-import CredentialDetails from '../Shared/Components/CredentialDetails';
-import { GetStatusResponse } from '../Messaging/Protocol/GetStatusResponse';
-import { Settings } from '../Settings/Settings';
-import { useCustomStyle } from '../Contexts/CustomStyleContext';
-import { SettingsStore } from '../Settings/SettingsStore';
 import { useTranslation } from 'react-i18next';
 
 interface InlineMenuCredentialItemProps {
-  status: GetStatusResponse | null;
   credential: AutoFillCredential;
-  onFillSingleField: (text: string, appendValue?: boolean) => Promise<void>;
-  handleCredentialClick: (credential: AutoFillCredential) => void;
-  handleCopyUsername: (credential: AutoFillCredential, notifyAction?: boolean) => void;
-  handleCopyPassword: (credential: AutoFillCredential, notifyAction?: boolean) => void;
-  handleCopyTotp: (credential: AutoFillCredential, notifyAction?: boolean) => void;
-  onCopy: (text: string) => Promise<boolean>;
-  onRedirectUrl: (url: string) => void;
-  notifyAction: (message: string) => void;
-  credentialsAreFromMultipleDatabases: () => boolean;
+  onFill: (credential: AutoFillCredential) => void;
+  onShowDetails?: (credential: AutoFillCredential) => void;
   getIcon: (databaseId: string, nodeId: string) => Promise<GetIconResponse | null>;
-  beforeOpenSubMenu: (showDetails: boolean, restoreIframeSize?: boolean) => void;
-  inlineMenuHasScrollbar: () => boolean;
-  handleOpenLargeTextView: (uuid: string) => void;
+  showDatabaseName: boolean;
 }
 
-export function InlineMenuCredentialItem(props: InlineMenuCredentialItemProps): JSX.Element {
-  const {
-    status,
-    credential,
-    onFillSingleField,
-    handleCredentialClick,
-    handleCopyUsername,
-    handleCopyPassword,
-    onCopy,
-    onRedirectUrl,
-    handleCopyTotp,
-    credentialsAreFromMultipleDatabases,
-    beforeOpenSubMenu,
-    inlineMenuHasScrollbar,
-    handleOpenLargeTextView,
-  } = props;
-  const { sizeHandler } = useCustomStyle();
+export function InlineMenuCredentialItem({
+  credential,
+  onFill,
+  onShowDetails,
+  getIcon,
+  showDatabaseName,
+}: InlineMenuCredentialItemProps): JSX.Element {
   const [icon, setIcon] = React.useState(credential.icon);
-  const [loadingIcon, setLoadingIcon] = React.useState(true);
-  const [anchorElDetails, setAnchorElDetails] = React.useState<null | HTMLElement>(null);
-  const [openDetailsMenu, setOpenDetailsMenu] = React.useState(false);
-  const [settings, setSettings] = React.useState<Settings>(new Settings());
+  const [loadingIcon, setLoadingIcon] = React.useState(!credential.icon);
   const [t] = useTranslation('global');
-  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
-  const open = Boolean(anchorEl);
 
   React.useEffect(() => {
-    const getStoredSettings = async () => {
-      const stored = await SettingsStore.getSettings();
-      setSettings(stored);
-    };
+    let active = true;
 
-    const getIcon = async () => {
-      if (!icon) {
-        const iconResponse = await props.getIcon(credential.databaseId, credential.uuid);
-
-        if (iconResponse) {
+    const loadIcon = async () => {
+      if (!credential.icon) {
+        const iconResponse = await getIcon(credential.databaseId, credential.uuid);
+        if (active && iconResponse) {
           setIcon(iconResponse.icon);
         }
       }
 
-      getStoredSettings();
-      setLoadingIcon(false);
+      if (active) {
+        setLoadingIcon(false);
+      }
     };
 
-    getIcon();
-  }, []);
-
-  React.useEffect(() => {
-    setAnchorEl(null);
-  }, [credential]);
-
-  function getCurrentTotpCode(credential: AutoFillCredential, formatted = true): string {
-    return AutoFillCredential.getCurrentTotpCode(credential, formatted);
-  }
-
-  const handleDetailsButtonClick = (event: any) => {
-    if (!settings.hideCredentialDetailsOnInlineMenu) {
-      beforeOpenSubMenu(true);
-      setAnchorElDetails(event.currentTarget);
-
-      setTimeout(() => {
-        setOpenDetailsMenu(true);
-      }, 50);
-    }
-
-    event.stopPropagation();
-    event.preventDefault();
-  };
-
-  const handleLargeTextView = (event: any) => {
-    handleOpenLargeTextView(credential.uuid);
-    event.stopPropagation();
-    event.preventDefault();
-  };
-
-  const handleMoreButtonClick = (event: any) => {
-    setAnchorEl(event.currentTarget);
-    event.stopPropagation();
-    event.preventDefault();
-  };
-
-  const onCopyUsername = (event: any) => {
-    handleCopyUsername(credential);
-    setAnchorEl(null);
-    event.stopPropagation();
-    event.preventDefault();
-  };
-  const onCopyPassword = (event: any) => {
-    handleCopyPassword(credential);
-    setAnchorEl(null);
-    event.stopPropagation();
-    event.preventDefault();
-  };
-
-  const onCopyTotp = (event: any) => {
-    handleCopyTotp(credential);
-    event.stopPropagation();
-    event.preventDefault();
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleCloseDetails = () => {
-    setAnchorElDetails(null);
-    setOpenDetailsMenu(false);
-
-    setTimeout(() => {
-      beforeOpenSubMenu(true, true);
-    }, 200);
-  };
+    void loadIcon();
+    return () => {
+      active = false;
+    };
+  }, [credential.databaseId, credential.icon, credential.uuid, getIcon]);
 
   return (
     <MenuItem
-      selected={anchorElDetails !== null}
-      key={credential.uuid}
-      onClick={() => {
-        handleCredentialClick(credential);
+      onClick={() => onFill(credential)}
+      sx={{
+        minHeight: 42,
+        mx: 0.35,
+        my: 0.12,
+        px: 0.6,
+        py: 0.32,
+        borderRadius: '10px',
+        gap: 0.7,
       }}
-      sx={{ p: `7.5px ${sizeHandler.getInlineMenuMarginRight(settings)} 7px 8px` }}
     >
-      <Box sx={{ display: 'flex', gap: '0px', flexDirection: 'row', alignItems: 'center', flexGrow: 1 }}>
-        <Box sx={{ flexShrink: 1, pl: '5px' }}>
-          {loadingIcon ? (
-            <Box
-              display="block"
-              sx={{
-                width: 15,
-                margin: 'auto',
-                pl: '5px',
-                mr: '12px',
-              }}
-            >
-              <CircularProgress style={{ color: 'gray' }} size={20} />
-            </Box>
-          ) : icon ? (
-            <Box
-              component="img"
-              display="block"
-              sx={{
-                height: 32,
-                width: 32,
-                borderRadius: '5px',
-              }}
-              alt="Icon"
-              src={icon}
-            />
-          ) : (
-            <Box
-              display="block"
-              sx={{
-                width: 15,
-                margin: 'auto',
-                pl: '5px',
-                mr: '12px',
-              }}
-            >
-              <Badge fontSize="medium" />
-            </Box>
-          )}
-        </Box>
-        <Box
-          sx={{
-            display: 'flex',
-            gap: '0px',
-            flexDirection: 'column',
-            flexGrow: 1,
-            width: 0,
-            ml: '8px',
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: '0px',
-              alignContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Typography
-              sx={{
-                pb: 0,
-                mb: 0,
-                textAlign: 'left',
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                mr: !settings.hideCredentialDetailsOnInlineMenu ? 0 : 2,
-                textOverflow: `${!settings.hideCredentialDetailsOnInlineMenu ? 'ellipsis' : 'none'}`,
-              }}
-              variant="body1"
-            >
-              {credential.title}
-            </Typography>
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: 'row',
-                gap: '1px',
-                justifyItems: 'center',
-                alignItems: 'center',
-              }}
-            >
-              {credential.totp.length > 0 && (
-                <Button size="small" onClick={onCopyTotp}>
-                  <Typography
-                    sx={{
-                      pb: 0,
-                      mb: 0,
-                      textAlign: 'left',
-                    }}
-                    variant="caption"
-                  >
-                    {getCurrentTotpCode(credential)}
-                  </Typography>
-                </Button>
-              )}
-              <Box>
-                <Tooltip title={t('inline-menu-credential-item.large-text-view')} placement="top" arrow>
-                  <IconButton sx={{ m: 0, fontSize: sizeHandler.getLargeTextViewIconSize() }} onClick={handleLargeTextView}>
-                    <FontDownloadOutlinedIcon fontSize="inherit" sx={{ color: 'gray', '&:hover': { color: '#90caf9' } }} />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-              <Menu
-                id="basic-menu"
-                anchorEl={anchorEl}
-                open={open}
-                onClose={handleClose}
-                sx={{ zIndex: '2147483642', height: '200px' }}
-                MenuListProps={{
-                  'aria-labelledby': 'basic-button',
-                  sx: { p: 0 },
-                }}
-                onClick={e => e.stopPropagation()}
-              >
-                <MenuItem onClick={onCopyUsername}>{t('inline-menu-credential-item.copy-username')}</MenuItem>
-                <MenuItem onClick={onCopyPassword}>{t('inline-menu-credential-item.copy-password')}</MenuItem>
-              </Menu>
-              {settings.hideCredentialDetailsOnInlineMenu && (
-                <IconButton size="small" onClick={handleMoreButtonClick}>
-                  <MoreHoriz fontSize="small" />
-                </IconButton>
-              )}
-
-              <Menu
-                id="basic-menu-details"
-                open={openDetailsMenu}
-                anchorEl={anchorElDetails}
-                onClose={handleCloseDetails}
-                sx={{ ml: inlineMenuHasScrollbar() ? 2 : 0.3 }}
-                MenuListProps={{
-                  'aria-labelledby': 'basic-button-details',
-                  sx: { p: 0 },
-                }}
-                anchorOrigin={{
-                  vertical: 'center',
-                  horizontal: 'right',
-                }}
-                transformOrigin={{
-                  vertical: 'center',
-                  horizontal: 'left',
-                }}
-                onClick={e => e.stopPropagation()}
-                PaperProps={{
-                  sx: {
-                    backgroundColor: '#hhh',
-                    boxShadow: 'none',
-                    borderRadius: '6px',
-                  },
-                }}
-              >
-                <Box sx={{ width: 300, maxHeight: '300px' }}>
-                  <CredentialDetails
-                    credential={credential}
-                    getStatus={async () => {
-                      return status;
-                    }}
-                    onCopyUsername={() => {
-                      handleCopyUsername(credential, false);
-                      handleCloseDetails();
-                    }}
-                    onCopyPassword={() => {
-                      handleCopyPassword(credential, false);
-                      handleCloseDetails();
-                    }}
-                    onCopyTotp={() => {
-                      handleCopyTotp(credential, false);
-                      handleCloseDetails();
-                    }}
-                    onCopy={async (text: string) => {
-                      await onCopy(text);
-                      handleCloseDetails();
-                      return true;
-                    }}
-                    onFillSingleField={onFillSingleField}
-                    onRedirectUrl={(url: string) => {
-                      onRedirectUrl(url);
-                      setOpenDetailsMenu(false);
-                      handleCloseDetails();
-                      return true;
-                    }}
-                    notifyAction={props.notifyAction}
-                    showTitle={false}
-                    showModified={false}
-                    allowAutofillField={true}
-                  />
-                </Box>
-              </Menu>
-            </Box>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: '5px', alignItems: 'center' }}>
-            <Typography
-              sx={{
-                color: 'text.secondary',
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-              }}
-              variant="body2"
-            >
-              {credential.username}
-            </Typography>
-            {credentialsAreFromMultipleDatabases() && (
-              <Typography
-                sx={{
-                  color: 'text.disabled',
-                  overflow: 'hidden',
-                  whiteSpace: 'nowrap',
-                  textOverflow: 'ellipsis',
-                  pr: '5px',
-                }}
-                variant="body2"
-              >
-                {credential.databaseName}
-              </Typography>
-            )}
-          </Box>
-        </Box>
-
-        {!settings.hideCredentialDetailsOnInlineMenu && (
-          <Box sx={{ height: '100%', position: 'absolute', right: 0 }}>
-            <IconButton sx={{ borderRadius: 0, p: 0, m: 0, height: '100%' }} onClick={handleDetailsButtonClick}>
-              <ChevronRightIcon fontSize="medium" style={{ color: 'gray' }} />
-            </IconButton>
-          </Box>
+      <Box
+        sx={{
+          width: 26,
+          height: 26,
+          flex: '0 0 auto',
+          display: 'grid',
+          placeItems: 'center',
+          borderRadius: '8px',
+          bgcolor: 'strongbox.field',
+          boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.14)',
+          overflow: 'hidden',
+          color: 'primary.main',
+        }}
+      >
+        {loadingIcon ? (
+          <CircularProgress size={14} />
+        ) : icon ? (
+          <Box component="img" src={icon} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <Badge sx={{ fontSize: 18 }} />
         )}
       </Box>
+
+      <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.35 }}>
+          <Typography
+            sx={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize: '0.76rem',
+              fontWeight: 620,
+              lineHeight: 1.25,
+            }}
+          >
+            {credential.title}
+          </Typography>
+          {credential.favourite && <StarRounded sx={{ flex: '0 0 auto', color: '#FFCC00', fontSize: 13 }} />}
+        </Box>
+        <Typography
+          color="text.secondary"
+          sx={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontSize: '0.64rem',
+            lineHeight: 1.3,
+          }}
+        >
+          {[credential.username, showDatabaseName ? credential.databaseName : ''].filter(Boolean).join(' · ') || '—'}
+        </Typography>
+      </Box>
+
+      {onShowDetails && (
+        <IconButton
+          size="small"
+          aria-label={t('inline-menu-credential-item.view-details')}
+          onClick={event => {
+            event.stopPropagation();
+            event.preventDefault();
+            onShowDetails(credential);
+          }}
+          sx={{ flex: '0 0 auto', color: 'text.secondary', p: 0.25 }}
+        >
+          <ChevronRightRounded sx={{ fontSize: 16 }} />
+        </IconButton>
+      )}
     </MenuItem>
   );
 }

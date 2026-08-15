@@ -1,10 +1,10 @@
-import { Box, Checkbox, FormControlLabel, FormGroup, List, ListItem } from '@mui/material';
+import { Box, Button, Checkbox, Divider, FormControlLabel, FormGroup, List, ListItem, Typography } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 import { Settings } from '../Settings/Settings';
-import { useCustomStyle } from '../Contexts/CustomStyleContext';
 import { SettingsStore } from '../Settings/SettingsStore';
 import { useTranslation } from 'react-i18next';
 import { BackgroundManager } from '../Background/BackgroundManager';
+import { CustomFieldMappingStore } from '../Content/CustomFieldMappingStore';
 
 interface Props {
   value: number;
@@ -15,10 +15,10 @@ function SettingsPopupFillTabPanel(props: Props) {
   const { value, index } = props;
 
   const [t] = useTranslation('global');
-  const { sizeHandler } = useCustomStyle();
 
   const [settings, setSettings] = useState<Settings>(new Settings());
   const [currentUrl, setCurrentUrl] = useState<string | undefined>('Loading...');
+  const [customFieldMappingCount, setCustomFieldMappingCount] = useState(0);
 
   useEffect(() => {
     getStoredSettings();
@@ -28,8 +28,10 @@ function SettingsPopupFillTabPanel(props: Props) {
     const stored = await SettingsStore.getSettings();
     const tab = await BackgroundManager.getCurrentTab();
     const url = tab ? tab.url : undefined;
+    const mappingCount = await CustomFieldMappingStore.count();
     setCurrentUrl(url);
     setSettings(stored);
+    setCustomFieldMappingCount(mappingCount);
   }
 
   const toggleAutoFillImmediatelyIfOnlyASingleMatch = async () => {
@@ -113,10 +115,15 @@ function SettingsPopupFillTabPanel(props: Props) {
     setSettings(stored2);
   };
 
+  const clearCustomFieldMappings = async () => {
+    await CustomFieldMappingStore.clearAll();
+    setCustomFieldMappingCount(0);
+  };
+
   return (
     <TabPanel value={value} index={index}>
-      <Box style={{ overflowY: 'auto', height: '350px', overflowWrap: 'anywhere' }}>
-        <List sx={{ width: sizeHandler.getSettingsPopupTabPanelsWidth(), pt: 0 }}>
+      <Box sx={{ width: '100%', minHeight: 350, overflowWrap: 'anywhere' }}>
+        <List sx={{ width: '100%', pt: 0 }}>
           <FormGroup>
             <ListItem sx={{ p: '2px' }}>
               <FormControlLabel
@@ -137,6 +144,25 @@ function SettingsPopupFillTabPanel(props: Props) {
               />
             </ListItem>
           </FormGroup>
+          <Divider sx={{ my: 1 }} />
+          <ListItem sx={{ px: 1, py: 1.25 }}>
+            <Box sx={{ width: '100%' }}>
+              <Typography variant="subtitle2">
+                {t('settings-popup-component.remembered-custom-fields', { defaultValue: 'Remembered custom fields' })}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, mb: 1 }}>
+                {t('settings-popup-component.remembered-custom-fields-description', {
+                  defaultValue: 'Only website-to-field links are stored locally. Secret values stay in Strongbox.',
+                })}
+              </Typography>
+              <Button variant="outlined" size="small" disabled={customFieldMappingCount === 0} onClick={clearCustomFieldMappings}>
+                {t('settings-popup-component.forget-remembered-custom-fields', {
+                  defaultValue: `Forget remembered fields (${customFieldMappingCount})`,
+                  count: customFieldMappingCount,
+                })}
+              </Button>
+            </Box>
+          </ListItem>
         </List>
       </Box>
     </TabPanel>

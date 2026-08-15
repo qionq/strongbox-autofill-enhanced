@@ -2,8 +2,8 @@ import { FontSize } from './Contexts/CustomStyleContext';
 import { AutoFillCredential } from './Messaging/Protocol/AutoFillCredential';
 import { Settings } from './Settings/Settings';
 
-export const defaultIFrameExtraWidth = 10;
-export const defaultIFrameExtraHeight = 10;
+export const defaultIFrameExtraWidth = 0;
+export const defaultIFrameExtraHeight = 0;
 
 const popupComponent = {
   margin: {
@@ -16,16 +16,16 @@ const popupComponent = {
 
 const inlineMenu = {
   width: {
-    s: '270px',
-    m: '300px',
-    l: '360px',
-    xl: '380px',
+    s: '250px',
+    m: '270px',
+    l: '286px',
+    xl: '300px',
   },
   height: {
-    s: '184px',
-    m: '210px',
-    l: '255px',
-    xl: '291px',
+    s: '148px',
+    m: '168px',
+    l: '188px',
+    xl: '208px',
   },
   fontSize: {
     s: '10px',
@@ -70,19 +70,19 @@ const credentialListItem = {
 
 const settingsPopupComponentList = {
   minWidth: {
-    s: '400px',
-    m: '400px',
-    l: '550px',
-    xl: '550px',
+    s: '344px',
+    m: '344px',
+    l: '344px',
+    xl: '344px',
   },
 };
 
 const settingsPopupTabPanels = {
   width: {
-    s: '290px',
-    m: '290px',
-    l: '390px',
-    xl: '390px',
+    s: '328px',
+    m: '328px',
+    l: '328px',
+    xl: '328px',
   },
 };
 
@@ -116,21 +116,36 @@ export class SizeHandler {
   };
 
   getInlineMenuHeight = (inlineMenuTruncatedHeight: string | null) => {
-    if (inlineMenuTruncatedHeight) {
-      const height = Math.floor(parseInt(inlineMenuTruncatedHeight)) - 80;
-      return `${height}px`;
-    } else {
+    const preferred = (() => {
       switch (this.fontSize) {
         case FontSize.small:
-          return inlineMenu.height.s;
+          return parseInt(inlineMenu.height.s);
         case FontSize.medium:
-          return inlineMenu.height.m;
+          return parseInt(inlineMenu.height.m);
         case FontSize.large:
-          return inlineMenu.height.l;
+          return parseInt(inlineMenu.height.l);
         case FontSize.xl:
-          return inlineMenu.height.xl;
+          return parseInt(inlineMenu.height.xl);
       }
+    })();
+
+    if (inlineMenuTruncatedHeight) {
+      const available = Math.max(72, Math.floor(parseInt(inlineMenuTruncatedHeight)) - 54);
+      return `${Math.min(preferred, available)}px`;
     }
+
+    return `${preferred}px`;
+  };
+
+  getInlineDetailsHeight = (inlineMenuTruncatedHeight: string | null) => {
+    const preferred = this.fontSize === FontSize.small ? 300 : this.fontSize === FontSize.medium ? 340 : this.fontSize === FontSize.large ? 360 : 380;
+
+    if (!inlineMenuTruncatedHeight) {
+      return `${preferred}px`;
+    }
+
+    const available = Math.max(120, Math.floor(parseInt(inlineMenuTruncatedHeight)) - 44);
+    return `${Math.min(preferred, available)}px`;
   };
 
   getInlineMenuFontSize = () => {

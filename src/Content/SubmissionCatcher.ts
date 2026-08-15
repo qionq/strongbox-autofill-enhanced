@@ -1,7 +1,3 @@
-import { PageAnalyser } from './PageAnalyser';
-import browser from 'webextension-polyfill';
-import FormModel from './FormModel';
-
 export class SubmissionCatcher {
   
   

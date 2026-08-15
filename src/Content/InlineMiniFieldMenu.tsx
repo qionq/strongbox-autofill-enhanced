@@ -1,31 +1,28 @@
 import * as React from 'react';
-import MenuItem from '@mui/material/MenuItem';
-import { AutoFillCredential } from '../Messaging/Protocol/AutoFillCredential';
-import { Alert, Box, Button, ButtonGroup, CircularProgress, Divider, MenuList, Paper, Snackbar, Typography } from '@mui/material';
-
-import { LastKnownDatabasesItem, Settings } from '../Settings/Settings';
-import { ExploreOffOutlined, SearchOff } from '@mui/icons-material';
-import AddCircleOutlineOutlinedIcon from '@mui/icons-material/AddCircleOutlineOutlined';
-import ArrowCircleLeftOutlinedIcon from '@mui/icons-material/ArrowCircleLeftOutlined';
-import SearchIcon from '@mui/icons-material/Search';
-import { InlineMenuCredentialItem } from './InlineMenuCredentialItem';
-import { UnlockResponse } from '../Messaging/Protocol/UnlockResponse';
-import LockOpenIcon from '@mui/icons-material/LockOpen';
-import HideInlineMenu from './HideInlineMenu';
-import UnlockDatabasesMenu from './UnlockDatabasesMenu';
-import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
-
-import { useCustomStyle } from '../Contexts/CustomStyleContext';
+import {
+  AddRounded,
+  ArrowBackIosNewRounded,
+  CloseRounded,
+  KeyRounded,
+  LockOpenRounded,
+  SearchRounded,
+  SendRounded,
+} from '@mui/icons-material';
+import { Box, Button, CircularProgress, IconButton, Paper, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import SearchBar, { SearchMode } from '../Shared/Components/SearchBar';
-import { SearchResponse } from '../Messaging/Protocol/SearchResponse';
-import { Virtuoso } from 'react-virtuoso';
+import { AutoFillCredential } from '../Messaging/Protocol/AutoFillCredential';
 import { GetIconResponse } from '../Messaging/Protocol/GetIconResponse';
 import { GetStatusResponse } from '../Messaging/Protocol/GetStatusResponse';
+import { SearchResponse } from '../Messaging/Protocol/SearchResponse';
+import { SingleFieldFillHandler } from '../Messaging/Protocol/SingleFieldFillRequest';
+import { UnlockResponse } from '../Messaging/Protocol/UnlockResponse';
+import { LastKnownDatabasesItem } from '../Settings/Settings';
 import { NativeAppApi } from '../Messaging/NativeAppApi';
-import LargeTextView from '../Shared/Components/LargeTextView';
+import { useCustomStyle } from '../Contexts/CustomStyleContext';
+import CredentialDetails from '../Shared/Components/CredentialDetails';
+import SearchBar, { SearchMode } from '../Shared/Components/SearchBar';
+import { InlineMenuCredentialItem } from './InlineMenuCredentialItem';
 import { SettingsStore } from '../Settings/SettingsStore';
-import { BackgroundManager } from '../Background/BackgroundManager';
 
 export interface InlineMiniFieldMenuProps {
   status: GetStatusResponse | null;
@@ -38,7 +35,7 @@ export interface InlineMiniFieldMenuProps {
   onCreateNewEntry: () => void;
   onUnlockDatabase: (databaseUuid: string) => Promise<UnlockResponse | null>;
   onFillWithCredential: (credential: AutoFillCredential) => Promise<void>;
-  onFillSingleField: (text: string, appendValue?: boolean) => Promise<void>;
+  onFillSingleField: SingleFieldFillHandler;
   unlockableDatabases: LastKnownDatabasesItem[];
   onCopyUsername: (credential: AutoFillCredential) => void;
   onCopyPassword: (credential: AutoFillCredential) => void;
@@ -53,645 +50,368 @@ export interface InlineMiniFieldMenuProps {
   searchCredentials: (query: string, skip: number, take: number) => Promise<SearchResponse | null>;
   getIcon: (databaseId: string, nodeId: string) => Promise<GetIconResponse | null>;
   resize: () => void;
+  onDismiss: () => void;
 }
 
 export default function InlineMiniFieldMenu(props: InlineMiniFieldMenuProps) {
-  
-  
-  const nativeAppApi = NativeAppApi.getInstance();
-  const [searchPageSize, setSearchPageSize] = React.useState(nativeAppApi.credentialResultsPageSize);
-  const [pendingUnlockDatabases, setPendingUnlockDatabases] = React.useState<Set<string>>(new Set());
-  const [closeButton, setCloseButton] = React.useState(null);
-  const [unlockButton, setUnlockButton] = React.useState(null);
-  const [openHideMenu, setOpenHideMenu] = React.useState(false);
-
-  const [openUnlockDatabasesMenu, setOpenUnlockDatabasesMenu] = React.useState(false);
-  const { sizeHandler } = useCustomStyle();
-
   const [t] = useTranslation('global');
-  const [loading, setLoading] = React.useState(true);
+  const { sizeHandler } = useCustomStyle();
+  const pageSize = NativeAppApi.getInstance().credentialResultsPageSize;
+  const [credentials, setCredentials] = React.useState<AutoFillCredential[]>(props.credentials);
+  const [loading, setLoading] = React.useState(false);
   const [searching, setSearching] = React.useState(false);
-  const [credentials, setCredentials] = React.useState<AutoFillCredential[]>(() => []);
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [credentialResultsCompleted, setCredentialResultsCompleted] = React.useState(true);
-  const [showSearchBar, setShowSearchBar] = React.useState(false);
-
-  const [popupVisible, setPopupVisible] = React.useState(false);
+  const [showSearch, setShowSearch] = React.useState(false);
+  const [selectedCredential, setSelectedCredential] = React.useState<AutoFillCredential | null>(null);
+  const [resultsCompleted, setResultsCompleted] = React.useState(props.credentials.length < pageSize);
+  const [pendingUnlocks, setPendingUnlocks] = React.useState<Set<string>>(new Set());
   const [toastMessage, setToastMessage] = React.useState('');
+  const [hideCredentialDetails, setHideCredentialDetails] = React.useState(false);
+  const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [showLargeTextView, setShowLargeTextView] = React.useState('');
-  const [largeTextViewString, setLargeTextViewString] = React.useState('');
+  const siteName = React.useMemo(() => {
+    try {
+      return new URL(props.url).hostname.replace(/^www\./, '');
+    } catch (_error) {
+      return '';
+    }
+  }, [props.url]);
+
+  const multipleDatabases = React.useMemo(() => new Set(credentials.map(credential => credential.databaseId)).size > 1, [credentials]);
 
   React.useEffect(() => {
-    bindSearchOrUrlResults();
+    requestAnimationFrame(() => props.resize());
+  }, [credentials.length, loading, selectedCredential, showSearch, toastMessage]);
+
+  React.useEffect(() => {
+    void SettingsStore.getSettings().then(settings => setHideCredentialDetails(settings.hideCredentialDetailsOnInlineMenu));
+
+    return () => {
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+    };
   }, []);
 
-  React.useEffect(() => {
-    setPendingUnlockDatabases(new Set());
-  }, [props]);
-
-  React.useEffect(() => {
-    const asyncFunc = async () => {
-      const settings = await SettingsStore.getSettings();
-
-      const cred = credentials.find(x => x.uuid == settings.uuidForLargeTextView);
-
-      if (cred) {
-        setShowLargeTextView(settings.uuidForLargeTextView);
-        setLargeTextViewString(cred.password);
-      } else {
-        setShowLargeTextView(String());
-        setLargeTextViewString(String());
-      }
-
-      requestAnimationFrame(() => {
-        props.resize();
-      });
-    };
-
-    asyncFunc();
-  }, [credentials, loading, searching, showSearchBar, showLargeTextView]);
-
-  const getUrl = async () => {
-    const tab = await BackgroundManager.getCurrentTab();
-    let url = tab ? tab.url : undefined;
-    return Settings.prepUrlPageForDoNotRunList(url ?? '');
-  };
-
-  const handleOpenHideMenu = (event: any) => {
-    props.beforeOpenSubMenu(true);
-    setCloseButton(event.currentTarget);
-
-    setTimeout(() => {
-      setOpenHideMenu(true);
-    }, 50);
-  };
-
-  const handleBackLargetextView = async () => {
-    const settings = await SettingsStore.getSettings();
-    settings.uuidForLargeTextView = String();
-    SettingsStore.setSettings(settings);
-    setShowLargeTextView(String());
-  };
-
-  const handleOpenLargeTextView = async (uuid: string) => {
-    const settings = await SettingsStore.getSettings();
-    settings.uuidForLargeTextView = uuid;
-
-    SettingsStore.setSettings(settings);
-    props.showLargeTextView();
-    setShowLargeTextView(uuid);
-  };
-
-  const handleDismissButton = () => {
-    let message = t('notification-toast.hide-for-a-while');
-    props.hideInlineMenusForAWhile();
-    props.notifyAction(message);
-  };
-
-  const handleOpenUnlockDatabasesMenu = (event: any) => {
-    if (props.unlockableDatabases.length == 1) {
-      handleUnlockDatabase(props.unlockableDatabases[0].uuid);
-    } else {
-      props.beforeOpenSubMenu(true);
-      setUnlockButton(event.currentTarget);
-
-      setTimeout(() => {
-        setOpenUnlockDatabasesMenu(true);
-      }, 50);
+  const showToast = (message: string) => {
+    if (toastTimer.current) {
+      clearTimeout(toastTimer.current);
     }
+
+    setToastMessage(message);
+    toastTimer.current = setTimeout(() => setToastMessage(''), 1400);
   };
 
-  const handleCredentialClick = (credential: AutoFillCredential) => {
-    props.onFillWithCredential(credential);
-  };
-
-  const handleCopyUsername = (credential: AutoFillCredential, notifyAction = true) => {
-    props.onCopyUsername(credential);
-
-    if (notifyAction) {
-      props.notifyAction(t('notification-toast.username-copied'));
-    }
-  };
-  const handleCopyPassword = (credential: AutoFillCredential, notifyAction = true) => {
-    props.onCopyPassword(credential);
-
-    if (notifyAction) {
-      props.notifyAction(t('notification-toast.password-copied'));
-    }
-  };
-  const handleCopyTotp = (credential: AutoFillCredential, notifyAction = true) => {
-    props.onCopyTotp(credential);
-
-    if (notifyAction) {
-      props.notifyAction(t('notification-toast.totp-copied'));
-    }
-  };
-
-  const handleCreateNewEntry = () => {
-    props.onCreateNewEntry();
-  };
-
-  const handleUnlockDatabase = async (databaseUuid: string) => {
-    pendingUnlockDatabases.add(databaseUuid);
-    setPendingUnlockDatabases(new Set(pendingUnlockDatabases));
-
-    const unlockResponse = await props.onUnlockDatabase(databaseUuid);
-
-    if (unlockResponse?.success) {
-      props.refreshInlineMenu();
-    } else {
-      setPendingUnlockDatabases(new Set());
-    }
-  };
-
-  const credentialsAreFromMultipleDatabases = () => {
-    const dbs = credentials.map(credential => credential.databaseId);
-    const uniqueDbs = new Set(dbs);
-    return uniqueDbs.size > 1;
-  };
-
-  const handleSearchChange = async (searchText: string) => {
-    bindSearchOrUrlResults(searchText);
-  };
-
-  const bindSearchOrUrlResults = async (searchText = '') => {
+  const bindSearchResults = async (searchText: string) => {
     const trimmed = searchText.trim();
-
     setLoading(true);
-    setCredentials([]);
     setSearchQuery(trimmed);
+    setSelectedCredential(null);
 
-    if (trimmed != String()) {
-      const results = await search(trimmed, 0, nativeAppApi.credentialResultsPageSize);
-
-      setSearchPageSize(nativeAppApi.credentialResultsPageSize);
-      setSearching(true);
-      setCredentialResultsCompleted(false);
-      setLoading(false);
-      if (results) {
-        
-        
-        
-        
-        
-        
-        
-
-        setCredentials(results);
-      } else {
-        
-      }
-    } else {
-      const results = props.credentials;
-      setSearchPageSize(results.length);
-      setCredentialResultsCompleted(false);
+    if (!trimmed) {
       setSearching(false);
+      setCredentials(props.credentials);
+      setResultsCompleted(props.credentials.length < pageSize);
       setLoading(false);
-      if (results) {
-        setCredentials(results);
-      } else {
-        
-      }
-    }
-  };
-
-  async function search(query: string, skip = 0, take: number = searchPageSize): Promise<AutoFillCredential[] | undefined> {
-    const response = await props.searchCredentials(query, skip, take);
-
-    return response ? response.results : undefined;
-  }
-
-  const getNext = async () => {
-    const updated = searchQuery ? await search(searchQuery, credentials.length) : await props.getCredentials(credentials.length, nativeAppApi.credentialResultsPageSize);
-
-    if (updated) {
-      
-      
-      
-      
-      
-      
-      
-
-      if (updated.length > 0) {
-        setCredentials([...credentials, ...updated]);
-      } else {
-        setCredentialResultsCompleted(true);
-      }
-    } else {
-      
-    }
-  };
-
-  const Footer = () => {
-    return credentialResultsCompleted || credentials.length === 0 ? null : (
-      <div
-        style={{
-          padding: '2rem',
-          display: 'flex',
-          justifyContent: 'center',
-        }}
-      >
-        <CircularProgress size="1rem" />
-      </div>
-    );
-  };
-
-  const handleToastClose = (event?: React.SyntheticEvent | Event, reason?: string) => {
-    if (reason === 'clickaway') {
       return;
     }
 
-    setPopupVisible(false);
+    setSearching(true);
+    const response = await props.searchCredentials(trimmed, 0, pageSize);
+    const results = response?.results ?? [];
+    setCredentials(results);
+    setResultsCompleted(results.length < pageSize);
+    setLoading(false);
   };
 
-  const handleHandleCloseHieMenu = () => {
-    setOpenHideMenu(false);
-    props.beforeOpenSubMenu(true, true);
-  };
+  const getNext = async () => {
+    const updated = searchQuery
+      ? (await props.searchCredentials(searchQuery, credentials.length, pageSize))?.results ?? []
+      : await props.getCredentials(credentials.length, pageSize);
 
-  const showToast = (value: string) => {
-    setToastMessage(value);
-    setPopupVisible(true);
-  };
-
-  const inlineMenuHasScrollbar = () => {
-    const elements = document.querySelectorAll('[data-test-id="virtuoso-scroller"]');
-
-    if (elements.length > 0 && credentials.length > 3) {
-      return true;
+    if (updated.length === 0) {
+      setResultsCompleted(true);
+      return;
     }
 
-    return false;
+    setCredentials(previous => [...previous, ...updated]);
+    setResultsCompleted(updated.length < pageSize);
   };
 
-  return (
-    <Paper sx={{ display: 'inline-block', zIndex: '2147483640', borderRadius: '15px' }}>
-      {!showLargeTextView && (
-        <MenuList autoFocusItem={false} disabledItemsFocusable={true} sx={{ pb: 0, pt: 0 }}>
-          {!loading ? (
-            <Box>
-              {credentials.length === 0 && props.unlockedDatabaseAvailable && (
-                <Box sx={{ width: sizeHandler.getInlineMenuWidth() }}>
-                  <MenuItem disabled dense>
-                    <Box sx={{ display: 'flex', gap: '12px', alignItems: 'center', pb: 1, pt: 1 }}>
-                      <SearchOff />
-                      {t('inline-mini-field-menu.no-matching-entries-found')}
-                    </Box>
-                  </MenuItem>
-                </Box>
-              )}
+  const unlockDatabase = async (databaseUuid: string) => {
+    setPendingUnlocks(previous => new Set(previous).add(databaseUuid));
+    const response = await props.onUnlockDatabase(databaseUuid);
 
-              {(credentials.length <= 3 && !searching) || (credentials.length <= 2 && searching) ? (
-                credentials.map(credential => (
-                  <Box key={credential.uuid} sx={{ maxHeight: sizeHandler.getInlineMenuHeight(props.inlineMenuTruncatedHeight), width: sizeHandler.getInlineMenuWidth(), pt: 2 }}>
-                    <InlineMenuCredentialItem
-                      status={props.status}
-                      credential={credential}
-                      onFillSingleField={props.onFillSingleField}
-                      handleCredentialClick={handleCredentialClick}
-                      handleCopyUsername={handleCopyUsername}
-                      handleCopyPassword={handleCopyPassword}
-                      handleCopyTotp={handleCopyTotp}
-                      onCopy={props.onCopy}
-                      onRedirectUrl={props.onRedirectUrl}
-                      notifyAction={showToast}
-                      credentialsAreFromMultipleDatabases={credentialsAreFromMultipleDatabases}
-                      getIcon={props.getIcon}
-                      beforeOpenSubMenu={props.beforeOpenSubMenu}
-                      inlineMenuHasScrollbar={inlineMenuHasScrollbar}
-                      handleOpenLargeTextView={handleOpenLargeTextView}
-                    />
-                  </Box>
-                ))
-              ) : (
-                <Box sx={{ maxHeight: sizeHandler.getInlineMenuHeight(props.inlineMenuTruncatedHeight), width: sizeHandler.getInlineMenuWidth(), pt: 2 }}>
-                  <Virtuoso
-                    style={{
-                      minHeight: `${credentials.length === 0 ? '0px' : sizeHandler.getInlineMenuHeight(props.inlineMenuTruncatedHeight)}`,
-                      cursor: 'pointer',
-                    }}
-                    data={credentials}
-                    overscan={48}
-                    endReached={() => {
-                      if (!credentialResultsCompleted) {
-                        getNext();
-                      }
-                    }}
-                    itemContent={(index, credential: AutoFillCredential) => {
-                      return (
-                        <InlineMenuCredentialItem
-                          status={props.status}
-                          key={credential.uuid}
-                          credential={credential}
-                          onFillSingleField={props.onFillSingleField}
-                          handleCredentialClick={handleCredentialClick}
-                          handleCopyUsername={handleCopyUsername}
-                          handleCopyPassword={handleCopyPassword}
-                          handleCopyTotp={handleCopyTotp}
-                          onCopy={props.onCopy}
-                          onRedirectUrl={props.onRedirectUrl}
-                          credentialsAreFromMultipleDatabases={credentialsAreFromMultipleDatabases}
-                          getIcon={props.getIcon}
-                          beforeOpenSubMenu={props.beforeOpenSubMenu}
-                          notifyAction={showToast}
-                          inlineMenuHasScrollbar={inlineMenuHasScrollbar}
-                          handleOpenLargeTextView={handleOpenLargeTextView}
-                        />
-                      );
-                    }}
-                    components={{ Footer }}
-                  />
-                </Box>
-              )}
+    if (response?.success) {
+      props.refreshInlineMenu();
+      return;
+    }
+
+    setPendingUnlocks(previous => {
+      const next = new Set(previous);
+      next.delete(databaseUuid);
+      return next;
+    });
+  };
+
+  const copyUsername = (credential: AutoFillCredential) => {
+    props.onCopyUsername(credential);
+    showToast(t('notification-toast.username-copied'));
+  };
+
+  const copyPassword = (credential: AutoFillCredential) => {
+    props.onCopyPassword(credential);
+    showToast(t('notification-toast.password-copied'));
+  };
+
+  const copyTotp = (credential: AutoFillCredential) => {
+    props.onCopyTotp(credential);
+    showToast(t('notification-toast.totp-copied'));
+  };
+
+  const detailsHeight = sizeHandler.getInlineDetailsHeight(props.inlineMenuTruncatedHeight);
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        width: sizeHandler.getInlineMenuWidth(),
+        overflow: 'hidden',
+        borderRadius: '15px',
+        border: '1px solid',
+        borderColor: theme => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.94)'),
+        bgcolor: 'background.paper',
+        backdropFilter: 'blur(28px) saturate(180%)',
+        boxShadow: theme =>
+          theme.palette.mode === 'dark'
+            ? 'inset 0 0 0 1px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.24), 0 14px 38px rgba(0, 0, 0, 0.48)'
+            : 'inset 0 0 0 1px rgba(60, 60, 67, 0.10), 0 1px 2px rgba(60, 60, 67, 0.12), 0 12px 30px rgba(60, 60, 67, 0.17)',
+      }}
+    >
+      <Box
+        sx={{
+          minHeight: 38,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.4,
+          px: 0.6,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'strongbox.sidebar',
+        }}
+      >
+        {selectedCredential ? (
+          <IconButton size="small" aria-label={t('general.back')} onClick={() => setSelectedCredential(null)}>
+            <ArrowBackIosNewRounded sx={{ fontSize: 15 }} />
+          </IconButton>
+        ) : (
+          <Box
+            sx={{
+              width: 23,
+              height: 23,
+              display: 'grid',
+              placeItems: 'center',
+              borderRadius: '8px',
+              color: 'primary.main',
+              bgcolor: theme => (theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 0.2)' : 'rgba(0, 122, 255, 0.12)'),
+            }}
+          >
+            <KeyRounded sx={{ fontSize: 15 }} />
+          </Box>
+        )}
+
+        <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+          <Typography
+            sx={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize: '0.73rem',
+              fontWeight: 650,
+              lineHeight: 1.2,
+            }}
+          >
+            {selectedCredential?.title || t('general.passwords')}
+          </Typography>
+          <Typography
+            color="text.secondary"
+            sx={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize: '0.59rem',
+              lineHeight: 1.15,
+            }}
+          >
+            {selectedCredential?.username || siteName}
+          </Typography>
+        </Box>
+
+        {selectedCredential ? (
+          <IconButton size="small" color="primary" aria-label={t('general.autofill')} onClick={() => props.onFillWithCredential(selectedCredential)}>
+            <SendRounded sx={{ fontSize: 17 }} />
+          </IconButton>
+        ) : (
+          <>
+            {props.unlockedDatabaseAvailable && (
+              <IconButton size="small" color={showSearch ? 'primary' : 'default'} aria-label={t('general.search')} onClick={() => setShowSearch(value => !value)}>
+                <SearchRounded sx={{ fontSize: 18 }} />
+              </IconButton>
+            )}
+            {props.showCreateNew && (
+              <IconButton size="small" aria-label={t('inline-mini-field-menu.create-new')} onClick={props.onCreateNewEntry}>
+                <AddRounded sx={{ fontSize: 19 }} />
+              </IconButton>
+            )}
+          </>
+        )}
+
+        <IconButton size="small" aria-label={t('general.close')} onClick={props.onDismiss}>
+          <CloseRounded sx={{ fontSize: 17 }} />
+        </IconButton>
+      </Box>
+
+      {selectedCredential ? (
+        <Box
+          data-testid="credential-details-scroll"
+          sx={{
+            minHeight: 0,
+            maxHeight: detailsHeight,
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            p: 0.45,
+            scrollbarGutter: 'stable',
+          }}
+        >
+          <CredentialDetails
+            credential={selectedCredential}
+            getStatus={async () => props.status}
+            onCopyUsername={() => copyUsername(selectedCredential)}
+            onCopyPassword={() => copyPassword(selectedCredential)}
+            onCopyTotp={() => copyTotp(selectedCredential)}
+            onCopy={async text => {
+              const copied = await props.onCopy(text);
+              if (copied) {
+                showToast(t('notification-toast.custom-field-copied'));
+              }
+              return copied;
+            }}
+            onFillSingleField={props.onFillSingleField}
+            onRedirectUrl={props.onRedirectUrl}
+            notifyAction={showToast}
+            showTitle={false}
+            showModified={false}
+            allowAutofillField={true}
+          />
+        </Box>
+      ) : (
+        <>
+          {showSearch && (
+            <Box sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 0.35 }}>
+              <SearchBar
+                searchMode={SearchMode.InlineMenu}
+                autofocus={true}
+                setSearching={setSearching}
+                setLoading={setLoading}
+                handleSearchChange={bindSearchResults}
+                onDismissButon={() => setShowSearch(false)}
+              />
             </Box>
-          ) : (
-            <div style={{ textAlign: 'center', width: sizeHandler.getInlineMenuWidth(), paddingTop: '10px', paddingBottom: '10px' }}>
-              <CircularProgress size="1rem" />
-              <Box>
-                <Typography color="text.secondary" variant="body1" sx={{ textAlign: 'center' }}>
-                  {searching ? t('general.searching') : t('general.loading')}
+          )}
+
+          <Box
+            data-testid="credential-list-scroll"
+            sx={{
+              minHeight: credentials.length === 0 ? 72 : 0,
+              maxHeight: sizeHandler.getInlineMenuHeight(props.inlineMenuTruncatedHeight),
+              overflowY: 'auto',
+              overscrollBehavior: 'contain',
+              py: 0.2,
+              scrollbarGutter: 'stable',
+            }}
+          >
+            {loading ? (
+              <Box sx={{ minHeight: 72, display: 'grid', placeItems: 'center' }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <CircularProgress size={16} />
+                  <Typography color="text.secondary" sx={{ mt: 0.4, fontSize: '0.68rem' }}>
+                    {searching ? t('general.searching') : t('general.loading')}
+                  </Typography>
+                </Box>
+              </Box>
+            ) : credentials.length > 0 ? (
+              <>
+                {credentials.map(credential => (
+                  <InlineMenuCredentialItem
+                    key={credential.uuid}
+                    credential={credential}
+                    onFill={value => props.onFillWithCredential(value)}
+                    onShowDetails={hideCredentialDetails ? undefined : setSelectedCredential}
+                    getIcon={props.getIcon}
+                    showDatabaseName={multipleDatabases}
+                  />
+                ))}
+                {!resultsCompleted && (
+                  <Button fullWidth size="small" onClick={getNext} sx={{ my: 0.35, fontSize: '0.68rem' }}>
+                    {t('general.load-more')}
+                  </Button>
+                )}
+              </>
+            ) : props.unlockableDatabases.length > 0 ? (
+              <Box sx={{ p: 0.6 }}>
+                <Typography color="text.secondary" sx={{ px: 0.6, pb: 0.45, fontSize: '0.68rem' }}>
+                  {t('create-new-entry-dialog.please-unlock-your-database')}
+                </Typography>
+                {props.unlockableDatabases.map(database => (
+                  <Button
+                    key={database.uuid}
+                    fullWidth
+                    size="small"
+                    startIcon={pendingUnlocks.has(database.uuid) ? <CircularProgress size={13} /> : <LockOpenRounded sx={{ fontSize: 16 }} />}
+                    onClick={() => unlockDatabase(database.uuid)}
+                    sx={{ justifyContent: 'flex-start', px: 0.8, mb: 0.3, overflow: 'hidden' }}
+                  >
+                    <Typography sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{database.nickName}</Typography>
+                  </Button>
+                ))}
+              </Box>
+            ) : (
+              <Box sx={{ minHeight: 72, display: 'grid', placeItems: 'center', px: 1.5, textAlign: 'center' }}>
+                <Typography color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                  {props.unlockedDatabaseAvailable
+                    ? t('inline-mini-field-menu.no-matching-entries-found')
+                    : t('inline-mini-field-menu.no-autofill-enabled-databases')}
                 </Typography>
               </Box>
-            </div>
-          )}
-
-          {!props.showCreateNew && props.unlockableDatabases.length == 0 && credentials.length === 0 ? (
-            <MenuItem disabled dense>
-              <Box sx={{ display: 'flex', gap: '12px', alignItems: 'center', pt: '5px' }}>
-                <ExploreOffOutlined />
-                {t('inline-mini-field-menu.no-autofill-enabled-databases')}
-              </Box>
-            </MenuItem>
-          ) : (
-            ''
-          )}
-        </MenuList>
+            )}
+          </Box>
+        </>
       )}
 
-      {showLargeTextView && (
-        <Box sx={{ overflowY: 'auto', maxHeight: sizeHandler.getInlineMenuHeight(props.inlineMenuTruncatedHeight), width: sizeHandler.getInlineMenuWidth(), mt: 1, mb: 1 }}>
-          <LargeTextView onFillSingleField={props.onFillSingleField} status={props.status} text={largeTextViewString} />
-        </Box>
-      )}
-
-      {showSearchBar && !showLargeTextView && (
-        <Box sx={{ width: sizeHandler.getInlineMenuWidth() }}>
-          <SearchBar
-            searchMode={SearchMode.InlineMenu}
-            autofocus={true}
-            setSearching={setSearching}
-            setLoading={setLoading}
-            handleSearchChange={handleSearchChange}
-            onDismissButon={() => {
-              setShowSearchBar(false);
-            }}
-          />
-        </Box>
-      )}
-
-      {(!showSearchBar || (showSearchBar && showLargeTextView)) && (
-        <Box>
-          <Divider />
-
-          {!showLargeTextView && (
-            <ButtonGroup
-              style={{ alignItems: 'center' }}
-              variant="outlined"
-              aria-label="outlined button group"
-              sx={{
-                width: props.unlockedDatabaseAvailable ? sizeHandler.getInlineMenuWidth() : '100%',
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
-            >
-              {props.unlockedDatabaseAvailable && (
-                <Button
-                  sx={{
-                    flexGrow: 1,
-                    fontSize: sizeHandler.getInlineMenuFontSize(),
-                    overflow: 'hidden',
-                    height: '40px',
-                    borderBottomLeftRadius: 15,
-                    borderBottom: 'none',
-                    borderLeft: 'none',
-                    borderTop: 'none',
-                    boxShadow: 'none',
-                    '&:hover': {
-                      boxShadow: 'none',
-                      borderLeft: 'none',
-                      borderBottom: 'none',
-                      borderTop: 'none',
-                    },
-                  }}
-                  onClick={handleCreateNewEntry}
-                  variant="outlined"
-                >
-                  <Box
-                    sx={{
-                      alignContent: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      display: 'flex',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', p: 0.5 }}>
-                      <AddCircleOutlineOutlinedIcon sx={{ fontSize: sizeHandler.getBottomToolbarIconSize() }} />
-                    </Box>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{t('general.create')}</Box>
-                  </Box>
-                </Button>
-              )}
-
-              {props.unlockedDatabaseAvailable && (
-                <Button
-                  onClick={() => setShowSearchBar(true)}
-                  variant="outlined"
-                  sx={{
-                    flexGrow: 1,
-                    fontSize: sizeHandler.getInlineMenuFontSize(),
-                    overflow: 'hidden',
-                    height: '40px',
-                    borderBottomRightRadius: 15,
-                    borderBottom: 'none',
-                    borderTop: 'none',
-                    '&:hover': {
-                      borderBottom: 'none',
-                      borderTop: 'none',
-                    },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      alignContent: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      display: 'flex',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', p: 0.5 }}>
-                      <SearchIcon sx={{ fontSize: sizeHandler.getBottomToolbarIconSize() }} />
-                    </Box>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{t('general.search')}</Box>
-                  </Box>
-                </Button>
-              )}
-
-              {props.unlockableDatabases.length !== 0 && (
-                <Button
-                  onClick={handleOpenUnlockDatabasesMenu}
-                  variant="outlined"
-                  sx={{
-                    flexGrow: 1,
-                    fontSize: sizeHandler.getInlineMenuFontSize(),
-                    overflow: 'hidden',
-                    height: '40px',
-                    borderBottom: 'none',
-                    borderTop: 'none',
-                    borderLeft: !props.unlockedDatabaseAvailable ? 'none' : '',
-                    '&:hover': {
-                      borderLeft: !props.unlockedDatabaseAvailable ? 'none' : '',
-                      borderBottom: 'none',
-                      borderTop: 'none',
-                    },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      alignContent: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      display: 'flex',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', p: 0.5 }}>
-                      {pendingUnlockDatabases.size !== 0 ? (
-                        <CircularProgress style={{ color: 'gray' }} size={20} />
-                      ) : (
-                        <LockOpenIcon sx={{ fontSize: sizeHandler.getBottomToolbarIconSize() }}></LockOpenIcon>
-                      )}
-                    </Box>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{!props.unlockedDatabaseAvailable && t('database-list-item.unlock')}</Box>
-                  </Box>
-                </Button>
-              )}
-
-              <Button
-                onClick={handleOpenHideMenu}
-                variant="outlined"
-                sx={{
-                  flexGrow: 1,
-                  fontSize: sizeHandler.getInlineMenuFontSize(),
-                  overflow: 'hidden',
-                  height: '40px',
-                  borderBottom: 'none',
-                  borderRight: 'none',
-                  borderTop: 'none',
-                  borderBottomRightRadius: 15,
-                  '&:hover': {
-                    borderRight: 'none',
-                    borderBottom: 'none',
-                    borderTop: 'none',
-                  },
-                }}
-              >
-                <Box
-                  sx={{
-                    alignContent: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    display: 'flex',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', p: 0.5 }}>
-                    <CancelOutlinedIcon sx={{ fontSize: sizeHandler.getBottomToolbarIconSize() }} />
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{!props.unlockedDatabaseAvailable && t('general.dismiss')}</Box>
-                </Box>
-              </Button>
-            </ButtonGroup>
-          )}
-
-          {showLargeTextView && (
-            <ButtonGroup
-              style={{ alignItems: 'center' }}
-              variant="outlined"
-              aria-label="outlined button group"
-              sx={{
-                width: props.unlockedDatabaseAvailable ? sizeHandler.getInlineMenuWidth() : '100%',
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
-            >
-              <Button
-                sx={{
-                  flexGrow: 1,
-                  fontSize: sizeHandler.getInlineMenuFontSize(),
-                  overflow: 'hidden',
-                  height: '40px',
-                  borderBottomLeftRadius: 15,
-                  borderBottomRightRadius: 15,
-                  border: 'none',
-                  boxShadow: 'none',
-                  '&:hover': {
-                    boxShadow: 'none',
-                    border: 'none',
-                  },
-                }}
-                onClick={handleBackLargetextView}
-                variant="outlined"
-              >
-                <Box
-                  sx={{
-                    alignContent: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    display: 'flex',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', p: 0.5 }}>
-                    <ArrowCircleLeftOutlinedIcon sx={{ fontSize: sizeHandler.getBottomToolbarIconSize() }} />
-                  </Box>
-
-                  <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{t('general.back')}</Box>
-                </Box>
-              </Button>
-            </ButtonGroup>
-          )}
-
-          <HideInlineMenu
-            url={props.url}
-            anchorEl={closeButton}
-            open={openHideMenu}
-            onCloseMenu={handleHandleCloseHieMenu}
-            setOpenHideMenu={setOpenHideMenu}
-            hideInlineMenusForAWhile={props.hideInlineMenusForAWhile}
-            notifyAction={props.notifyAction}
-          />
-
-          <UnlockDatabasesMenu
-            unlockableDatabases={props.unlockableDatabases}
-            unlockedDatabaseAvailable={props.unlockedDatabaseAvailable}
-            pendingUnlockDatabases={pendingUnlockDatabases}
-            handleUnlockDatabase={handleUnlockDatabase}
-            url={props.url}
-            anchorEl={unlockButton}
-            setOpenMenu={setOpenUnlockDatabasesMenu}
-            open={openUnlockDatabasesMenu}
-            notifyAction={props.notifyAction}
-          />
-        </Box>
-      )}
-
-      <Snackbar open={popupVisible} autoHideDuration={1000} onClose={handleToastClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
-        <Alert onClose={handleToastClose} severity="success" sx={{ width: '100%' }}>
+      {toastMessage && (
+        <Box
+          role="status"
+          sx={{
+            position: 'absolute',
+            left: 7,
+            right: 7,
+            bottom: 6,
+            px: 1,
+            py: 0.5,
+            borderRadius: '10px',
+            bgcolor: theme => (theme.palette.mode === 'dark' ? 'rgba(58, 58, 60, 0.96)' : 'rgba(29, 29, 31, 0.9)'),
+            color: 'common.white',
+            textAlign: 'center',
+            fontSize: '0.68rem',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.18)',
+          }}
+        >
           {toastMessage}
-        </Alert>
-      </Snackbar>
+        </Box>
+      )}
     </Paper>
   );
 }

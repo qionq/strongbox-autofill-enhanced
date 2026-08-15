@@ -23,7 +23,7 @@ const settingsSerializableObject: {
 } = {
   lng: String(),
   lastSelectedNewEntryGroupUuidForDatabase: String(),
-  autoFillImmediatelyIfOnlyASingleMatch: false,
+  autoFillImmediatelyIfOnlyASingleMatch: true,
   autoFillImmediatelyWithFirstMatch: false,
   showMatchCountOnPopupBadge: false,
   showInlineIconAndPopupMenu: false,
@@ -83,11 +83,11 @@ export class SettingsStore {
     }
   }
 
-  public static setSettings(settings: Settings) {
+  public static async setSettings(settings: Settings): Promise<void> {
 
-    const newSettings: { [key: string]: any } = {};
+    const newSettings: Record<string, string> = {};
     newSettings[settingsKey] = this.serialize(settings);
 
-    browser.storage.sync.set(newSettings);
+    await browser.storage.sync.set(newSettings);
   }
 }

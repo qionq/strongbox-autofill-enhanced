@@ -13,7 +13,7 @@ export class LastKnownDatabasesItem {
 export class Settings {
   lng = String();
   lastSelectedNewEntryGroupUuidForDatabase = new Map<string, string>();
-  autoFillImmediatelyIfOnlyASingleMatch = false;
+  autoFillImmediatelyIfOnlyASingleMatch = true;
   autoFillImmediatelyWithFirstMatch = false;
   showMatchCountOnPopupBadge = true;
   showInlineIconAndPopupMenu = true;
@@ -33,7 +33,7 @@ export class Settings {
   hideCredentialDetailsOnInlineMenu = false;
 
   
-  uuidForLargeTextView: string = String();
+  uuidForLargeTextView = String();
 
   static prepUrlForDoNotRunList(url: string) {
     const a = document.createElement('a');

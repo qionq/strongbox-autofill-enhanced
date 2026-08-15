@@ -6,6 +6,8 @@
     "module": "esnext",
     "moduleResolution": "node",
     "lib": ["dom", "ES2020"],
+    "types": ["webextension-polyfill"],
+    "skipLibCheck": true,
     "strict": true,
     "strictPropertyInitialization": false,
     "sourceMap": true,

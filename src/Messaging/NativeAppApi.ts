@@ -29,6 +29,12 @@ import { GetPasswordAndStrengthRequest } from './Protocol/GetPasswordAndStrength
 import { GetPasswordAndStrengthResponse } from './Protocol/GetPasswordAndStrengthResponse';
 import { GetNewEntryDefaultsResponseV2 } from './Protocol/GetNewEntryDefaultsResponseV2';
 import { CopyStringRequest, CopyStringResponse } from './Protocol/CopyStringRequest';
+import { AutoFillCredential } from './Protocol/AutoFillCredential';
+import {
+  getCredentialSearchQueryForUrl,
+  getPasswordlessUrlMatches,
+  mergeUniqueCredentials,
+} from './PasswordlessUrlCredentialMatcher';
 
 export class NativeAppApi {
   private static instance: NativeAppApi;
@@ -61,8 +67,6 @@ export class NativeAppApi {
   }
 
   public async getStatus(): Promise<GetStatusResponse | null> {
-    const startTime = performance.now();
-
     const request = new AutoFillEncryptedRequest();
     request.messageType = AutoFillMessageType.status;
     request.clientPublicKey = this.byteArrayToBase64(this.keyPair.publicKey);
@@ -113,6 +117,70 @@ export class NativeAppApi {
     const encrypted = await this.buildEncryptedRequest(credRequest, AutoFillMessageType.getCredentialsForUrl);
 
     return await this.sendMessage<CredentialsForUrlResponse>(encrypted);
+  }
+
+  /**
+   * Strongbox's native URL endpoint deliberately omits entries whose standard
+   * password is empty. For a user-opened credential menu, restore that narrow
+   * case through the existing search endpoint and an exact-host check.
+   */
+  public async credentialsForUrlIncludingPasswordless(url: string, skip: number, take: number): Promise<CredentialsForUrlResponse | null> {
+    const requestedSkip = Math.max(0, skip);
+    const requestedTake = Math.max(1, take);
+    const requestedEnd = requestedSkip + requestedTake;
+    const nativeMaxPageSize = 24;
+    const standardResults: AutoFillCredential[] = [];
+    let unlockedDatabaseCount = 0;
+
+    while (standardResults.length < requestedEnd) {
+      const chunkSize = Math.min(nativeMaxPageSize, requestedEnd - standardResults.length);
+      const response = await this.credentialsForUrl(url, standardResults.length, chunkSize);
+      if (response === null) return null;
+
+      unlockedDatabaseCount = response.unlockedDatabaseCount;
+      standardResults.push(...response.results);
+
+      if (response.results.length < chunkSize) break;
+    }
+
+    // A full standard window means any passwordless matches belong on a later
+    // page. This keeps native ordering intact and avoids an unnecessary search.
+    if (standardResults.length >= requestedEnd) {
+      return {
+        unlockedDatabaseCount,
+        results: standardResults.slice(requestedSkip, requestedEnd),
+      };
+    }
+
+    const query = getCredentialSearchQueryForUrl(url);
+    if (query === null) {
+      return {
+        unlockedDatabaseCount,
+        results: standardResults.slice(requestedSkip, requestedEnd),
+      };
+    }
+
+    const searchMaxPageSize = 64;
+    const maxSearchPages = 4;
+    const fallbackNeededThrough = requestedEnd - standardResults.length;
+    let rawSearchOffset = 0;
+    let passwordlessMatches: AutoFillCredential[] = [];
+
+    for (let page = 0; page < maxSearchPages && passwordlessMatches.length < fallbackNeededThrough; page += 1) {
+      const searchResponse = await this.search(query, rawSearchOffset, searchMaxPageSize);
+      const searchResults = searchResponse?.results ?? [];
+
+      passwordlessMatches = mergeUniqueCredentials(passwordlessMatches, getPasswordlessUrlMatches(url, searchResults));
+      rawSearchOffset += searchResults.length;
+
+      if (searchResults.length < searchMaxPageSize) break;
+    }
+
+    const merged = mergeUniqueCredentials(standardResults, passwordlessMatches);
+    return {
+      unlockedDatabaseCount,
+      results: merged.slice(requestedSkip, requestedEnd),
+    };
   }
 
   public async copyField(databaseId: string, nodeId: string, field: WellKnownField, explicitTotp = false): Promise<CopyFieldResponse | null> {

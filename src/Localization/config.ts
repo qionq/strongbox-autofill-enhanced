@@ -15,6 +15,8 @@ import global_ptbr from './Languages/pt-BR.json';
 import global_engb from './Languages/en-GB.json';
 import global_nl from './Languages/nl.json';
 import global_pl from './Languages/pl.json';
+import global_ja from './Languages/ja.json';
+import { defaultLanguage, resolveSupportedLanguage } from './LanguageSelection';
 
 const resources = {
   en: { global: global_en },
@@ -32,46 +34,29 @@ const resources = {
   uk: { global: global_uk },
   nl: { global: global_nl },
   pl: { global: global_pl },
+  ja: { global: global_ja },
 };
 
-export const languages = Object.keys(resources ?? []) as [string];
+export const languages = Object.keys(resources ?? []);
 
 export const getSelectedlanguage = async () => {
   const stored = await SettingsStore.getSettings();
 
   
-  if (stored.lng) {
+  if (stored.lng && languages.includes(stored.lng)) {
     return stored.lng;
   }
 
-  
-  if (languages.includes(navigator.language)) {
-    return navigator.language;
-  }
-
-  
-  if (languages.includes(navigator.language.split('-')[0])) {
-    return navigator.language.split('-')[0];
-  }
-
-  
-  return languages[0];
+  return resolveSupportedLanguage(navigator.language, languages);
 };
 
 export const isAutoDetected = (lng: string) => {
-  if (isKnownLanguage()) {
-    return [navigator.language].includes(lng);
-  }
-
-  return [navigator.language, navigator.language.split('-')[0]].includes(lng);
-};
-
-const isKnownLanguage = () => {
-  return Object.keys(resources).reduce((exists, key) => (exists = !exists ? key === navigator.language : exists), false);
+  return resolveSupportedLanguage(navigator.language, languages) === lng;
 };
 
 export const config = {
   lng: await getSelectedlanguage(),
+  fallbackLng: defaultLanguage,
   resources,
   interpolation: { escapeValue: false },
 };

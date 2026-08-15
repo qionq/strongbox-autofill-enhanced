@@ -2,10 +2,11 @@ import React from 'react';
 import '../Styles/large-text-view.css';
 import { ColourPalete, useCustomStyle } from '../../Contexts/CustomStyleContext';
 import { GetStatusResponse } from '../../Messaging/Protocol/GetStatusResponse';
+import { SingleFieldFillHandler } from '../../Messaging/Protocol/SingleFieldFillRequest';
 
 interface Props {
   text: string;
-  onFillSingleField: (text: string, appendValue: boolean) => Promise<void>;
+  onFillSingleField: SingleFieldFillHandler;
   status: GetStatusResponse | null;
 }
 
@@ -35,7 +36,7 @@ function LargeTextView(props: Props) {
               key={charIndex}
               className="grid-item-hover"
               onClick={() => {
-                props.onFillSingleField(char, true);
+                props.onFillSingleField({ text: char, appendValue: true });
               }}
             >
               <div style={{ fontSize: '22px', color: resolveColor(char) }}>{char}</div>

@@ -4,31 +4,32 @@ import { NativeAppApi } from '../Messaging/NativeAppApi';
 import { DatabaseSummary } from '../Messaging/Protocol/DatabaseSummary';
 import DatabaseListItem from './DatabaseListItem';
 import { useTranslation } from 'react-i18next';
+import type { PopupToastSeverity } from './PopupComponent';
 
 interface DatabasesListPopupComponentProps {
-  showToast: (message: string) => void;
+  showToast: (message: string, severity?: PopupToastSeverity) => void;
 }
 
 function DatabasesListPopupComponent({ showToast }: DatabasesListPopupComponentProps) {
   const [databases, setDatabases] = useState<DatabaseSummary[]>();
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<boolean>();
   const [t] = useTranslation('global');
 
   React.useEffect(() => {
     async function getCurrentStatus() {
-
       const status = await NativeAppApi.getInstance().getStatus();
       if (status != null) {
         setDatabases(status.databases);
       } else {
-        setError(true);
+        setDatabases([]);
       }
 
       setLoading(false);
     }
 
     getCurrentStatus().catch(() => {
+      setDatabases([]);
+      setLoading(false);
     });
   }, []);
 
@@ -39,7 +40,17 @@ function DatabasesListPopupComponent({ showToast }: DatabasesListPopupComponentP
           {t('databases-list-popup-component.title')}
         </ListSubheader>
       }
-      sx={{ minWidth: '400px', minHeight: '100px', mt: 0, pt: 0 }}
+      sx={{
+        width: 360,
+        maxWidth: 360,
+        height: '100%',
+        boxSizing: 'border-box',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        mt: 0,
+        pt: 0,
+        pb: 0.5
+      }}
     >
       {!loading && databases != undefined ? (
         databases.length ? (
@@ -50,10 +61,10 @@ function DatabasesListPopupComponent({ showToast }: DatabasesListPopupComponentP
               <Typography
                 variant="body1"
                 align="center"
-                
+
                 sx={{
                   textOverflow: 'ellipsis',
-                  p: 0,
+                  p: 0
                 }}
               >
                 {t('databases-list-popup-component.no-databases')}
@@ -66,7 +77,7 @@ function DatabasesListPopupComponent({ showToast }: DatabasesListPopupComponentP
                 color="text.secondary"
                 sx={{
                   textOverflow: 'ellipsis',
-                  p: '5px',
+                  p: '5px'
                 }}
               >
                 {t('databases-list-popup-component.no-databases-message')}

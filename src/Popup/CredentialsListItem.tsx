@@ -1,232 +1,109 @@
 import * as React from 'react';
-import Typography from '@mui/material/Typography';
-import { AutoFillCredential } from '../Messaging/Protocol/AutoFillCredential';
-import Box from '@mui/system/Box';
-import { Badge } from '@mui/icons-material';
-import { CircularProgress, IconButton, InputAdornment, ListItem, Tooltip } from '@mui/material';
-import * as OTPAuth from 'otpauth';
-import { NativeAppApi } from '../Messaging/NativeAppApi';
+import { Badge, ChevronRightRounded, StarRounded } from '@mui/icons-material';
+import { Box, CircularProgress, IconButton, ListItemButton, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useCustomStyle } from '../Contexts/CustomStyleContext';
-import { Settings } from '../Settings/Settings';
-import { BackgroundManager } from '../Background/BackgroundManager';
-import { SettingsStore } from '../Settings/SettingsStore';
-import StarIcon from '@mui/icons-material/Star';
-import ContentPasteGoIcon from '@mui/icons-material/ContentPasteGo';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import browser from 'webextension-polyfill';
+import { AutoFillCredential } from '../Messaging/Protocol/AutoFillCredential';
+import { NativeAppApi } from '../Messaging/NativeAppApi';
 
 interface CredentialListItemProps {
   credential: AutoFillCredential;
-  showToast: (message: string) => void;
-  onClick: (credential: AutoFillCredential) => void;
-  selected: boolean;
+  onFill: (credential: AutoFillCredential) => void;
+  onDetails?: (credential: AutoFillCredential) => void;
+  showDatabaseName: boolean;
 }
 
-export default function CredentialsListItem({ credential, selected, onClick }: CredentialListItemProps) {
-  const [settings, setSettings] = React.useState<Settings>(new Settings());
+export default function CredentialsListItem({ credential, onFill, onDetails, showDatabaseName }: CredentialListItemProps) {
   const [icon, setIcon] = React.useState(credential.icon);
-  const [loadingIcon, setLoadingIcon] = React.useState(true);
-  const [isHovered, setIsHovered] = React.useState(false);
+  const [loadingIcon, setLoadingIcon] = React.useState(!credential.icon);
   const [t] = useTranslation('global');
-  const { sizeHandler } = useCustomStyle();
 
   React.useEffect(() => {
-    const getStoredSettings = async () => {
-      const stored = await SettingsStore.getSettings();
-      setSettings(stored);
-    };
+    let active = true;
 
-    getStoredSettings();
-
-    const getIcon = async () => {
-      if (!icon) {
-        const iconResponse = await NativeAppApi.getInstance().getIcon(credential.databaseId, credential.uuid);
-
-        if (iconResponse) {
-          setIcon(iconResponse.icon);
+    const loadIcon = async () => {
+      if (!credential.icon) {
+        const response = await NativeAppApi.getInstance().getIcon(credential.databaseId, credential.uuid);
+        if (active && response) {
+          setIcon(response.icon);
         }
       }
 
-      setLoadingIcon(false);
+      if (active) {
+        setLoadingIcon(false);
+      }
     };
 
-    getIcon();
-  }, []);
-
-  let currentTotpCode = getCurrentTotpCode();
-
-  if (currentTotpCode.length > 0) {
-    const middle = Math.floor(currentTotpCode.length / 2);
-    if (middle > 0) {
-      currentTotpCode = currentTotpCode.substring(0, middle) + '-' + currentTotpCode.substring(middle);
-    }
-  }
-
-  function getCurrentTotpCode(): string {
-    if (credential.totp.length > 0) {
-      try {
-        const parsedTotp = OTPAuth.URI.parse(credential.totp);
-        return parsedTotp.generate();
-      } catch (error) {
-      }
-    }
-
-    return '';
-  }
-
-  const autofill = async (): Promise<void> => {
-    const tab = await BackgroundManager.getCurrentTab();
-    const url = tab ? tab.url : undefined;
-    const tabId = tab?.id;
-
-    if (!url || !tabId) {
-      return;
-    }
-
-    await BackgroundManager.getInstance().fillWithCredential(tabId, credential);
-
-    window.close();
-  };
-
-  const onRedirectUrl = async (url: string) => {
-    await browser.tabs.create({ url: url });
-  };
+    void loadIcon();
+    return () => {
+      active = false;
+    };
+  }, [credential.databaseId, credential.icon, credential.uuid]);
 
   return (
-    <ListItem
-      sx={{ mb: '3px', mt: '3px', cursor: 'pointer' }}
-      disableGutters
-      disablePadding
-      button
-      selected={!settings.hideCredentialDetailsOnPopup ? selected : false}
-      key={credential.uuid}
-      onClick={() => onClick(credential)}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+    <ListItemButton
+      onClick={() => onFill(credential)}
+      sx={{
+        minHeight: 52,
+        mx: 0.75,
+        my: 0.25,
+        px: 0.8,
+        py: 0.5,
+        borderRadius: 2.25,
+        gap: 0.9,
+      }}
     >
       <Box
-        display="flex"
         sx={{
-          m: '5px',
-          p: '0px 0px 5px 0px',
-
-          alignContent: 'center',
-          alignItems: 'center',
+          width: 32,
+          height: 32,
+          flex: '0 0 auto',
+          display: 'grid',
+          placeItems: 'center',
+          overflow: 'hidden',
+          borderRadius: 1.9,
+          bgcolor: 'strongbox.field',
+          boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.14)',
+          color: 'primary.main',
         }}
       >
-        <Box
-          sx={{
-            flexGrow: 0,
-            flexShrink: 0,
-            alignContent: 'center',
-            justifyContent: 'center',
-            mt: 'auto',
-            mb: 'auto',
-          }}
-        >
-          {loadingIcon ? (
-            <Box
-              display="block"
-              sx={{
-                height: 32,
-                mr: '5px',
-              }}
-            >
-              <CircularProgress style={{ color: 'gray' }} size={20} />
-            </Box>
-          ) : icon ? (
-            <Box
-              component="img"
-              display="block"
-              sx={{
-                height: 32,
-                marginRight: '5px',
-              }}
-              alt="Icon"
-              src={icon}
-            />
-          ) : (
-            <Box
-              display="block"
-              sx={{
-                height: 32,
-                mr: '5px',
-              }}
-            >
-              <Badge fontSize="large" />
-            </Box>
-          )}
-        </Box>
-        <Box
-          sx={{
-            flexGrow: 0,
-            flexShrink: 0,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Typography
-              variant="body2"
-              sx={{
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: sizeHandler.getCredentialListItemWidth(credential, settings, isHovered),
-              }}
-            >
-              {credential.title}
-            </Typography>
-
-            {credential.favourite && <StarIcon sx={{ fontSize: 16, color: 'yellow', ml: '5px', pl: '0px', pr: '0px' }} />}
-          </Box>
-          <Box
-            sx={{
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              mt: '0px',
-              p: 0,
-              maxWidth: sizeHandler.getCredentialListItemWidth(credential, settings, isHovered, true),
-            }}
-          >
-            <Typography variant="caption" display="inline" color="text.secondary">
-              {credential.username}
-            </Typography>
-          </Box>
-        </Box>
-
-        {isHovered && !settings.hideCredentialDetailsOnPopup && (
-          <Box sx={{ p: 0, pl: 1, position: 'absolute', right: 0, pr: 1, display: 'flex', alignItems: 'row' }}>
-            {credential.url.length > 0 && (
-              <Tooltip title={t('general.launch-url')} placement="top" arrow>
-                <Box sx={{ pt: 3, pb: 3 }}>
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      aria-label={t('general.launch-url')}
-                      edge="end"
-                      onClick={() => {
-                        onRedirectUrl(credential.url);
-                      }}
-                    >
-                      <OpenInNewIcon />
-                    </IconButton>
-                  </InputAdornment>
-                </Box>
-              </Tooltip>
-            )}
-            <Tooltip title={t('general.autofill')} placement="top" arrow>
-              <Box sx={{ pt: 3, pb: 3 }}>
-                <InputAdornment position="end">
-                  <IconButton size="small" aria-label={t('general.autofill')} edge="end" onClick={autofill}>
-                    <ContentPasteGoIcon />
-                  </IconButton>
-                </InputAdornment>
-              </Box>
-            </Tooltip>
-          </Box>
+        {loadingIcon ? (
+          <CircularProgress size={15} />
+        ) : icon ? (
+          <Box component="img" src={icon} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <Badge sx={{ fontSize: 19 }} />
         )}
       </Box>
-    </ListItem>
+
+      <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.35 }}>
+          <Typography sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', fontWeight: 620 }}>
+            {credential.title}
+          </Typography>
+          {credential.favourite && <StarRounded sx={{ flex: '0 0 auto', color: '#FFCC00', fontSize: 14 }} />}
+        </Box>
+        <Typography
+          color="text.secondary"
+          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.69rem' }}
+        >
+          {[credential.username, showDatabaseName ? credential.databaseName : ''].filter(Boolean).join(' · ') || '—'}
+        </Typography>
+      </Box>
+
+      {onDetails && (
+        <IconButton
+          size="small"
+          aria-label={t('inline-menu-credential-item.view-details')}
+          onClick={event => {
+            event.stopPropagation();
+            event.preventDefault();
+            onDetails(credential);
+          }}
+          sx={{ p: 0.35, color: 'text.secondary' }}
+        >
+          <ChevronRightRounded sx={{ fontSize: 19 }} />
+        </IconButton>
+      )}
+    </ListItemButton>
   );
 }

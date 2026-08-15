@@ -7,19 +7,19 @@ function NoResultsFoundPopupComponent() {
   const [t] = useTranslation('global');
 
   return (
-    <Paper>
-      <Stack direction="column" justifyContent="center" alignItems="center" minWidth="200px" spacing={1} sx={{ m: 0 }}>
+    <Paper elevation={0} sx={{ bgcolor: 'transparent' }}>
+      <Stack direction="column" justifyContent="center" alignItems="center" spacing={0.5} sx={{ minHeight: 120, px: 2 }}>
         <Box display="block">
           <Search
             color="disabled"
             sx={{
-              fontSize: 60,
+              fontSize: 34,
             }}
           />
         </Box>
         <Box>
           <Typography
-            variant="h6"
+            variant="subtitle1"
             align="center"
             sx={{
               textOverflow: 'ellipsis',
@@ -36,7 +36,7 @@ function NoResultsFoundPopupComponent() {
             color="text.secondary"
             sx={{
               textOverflow: 'ellipsis',
-              p: 2,
+              p: 0.5,
             }}
           >
             {t('no-results-found-popup-component.message')}

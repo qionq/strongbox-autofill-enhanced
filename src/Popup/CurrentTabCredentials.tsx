@@ -1,356 +1,354 @@
 import * as React from 'react';
-import List from '@mui/material/List';
+import browser from 'webextension-polyfill';
+import { AddRounded, ArrowBackIosNewRounded, KeyRounded, SendRounded } from '@mui/icons-material';
+import { Box, Button, CircularProgress, IconButton, List, ListSubheader, Typography } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import { NativeAppApi } from '../Messaging/NativeAppApi';
 import { AutoFillCredential } from '../Messaging/Protocol/AutoFillCredential';
-import { useEffect, useState } from 'react';
 import CredentialsListItem from './CredentialsListItem';
 import NoResultsFoundPopupComponent from './NoResultsFoundPopupComponent';
 import { BackgroundManager } from '../Background/BackgroundManager';
-import { Box, Button, CircularProgress, Grid, Paper, Typography } from '@mui/material';
 import SearchBar, { SearchMode } from '../Shared/Components/SearchBar';
-import { GroupedVirtuoso } from 'react-virtuoso';
-import { useTranslation } from 'react-i18next';
 import CredentialDetails from '../Shared/Components/CredentialDetails';
-import { AddCircle } from '@mui/icons-material';
 import { WellKnownField } from '../Messaging/Protocol/WellKnownField';
 import { SettingsStore } from '../Settings/SettingsStore';
 import { Settings } from '../Settings/Settings';
-
-import browser from 'webextension-polyfill';
-import { Utils } from '../Utils';
+import type { PopupToastSeverity } from './PopupComponent';
 
 interface CurrentTabCredentialsComponentProps {
-  showToast: (message: string) => void;
+  showToast: (message: string, severity?: PopupToastSeverity) => void;
   initScrollbars: () => void;
 }
 
 function CurrentTabCredentialsComponent({ showToast, initScrollbars }: CurrentTabCredentialsComponentProps) {
   const nativeAppApi = NativeAppApi.getInstance();
-  const [loading, setLoading] = useState(true);
-  const [credentials, setCredentials] = useState<AutoFillCredential[]>(() => []);
-  const [searching, setSearching] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [credentialResultsCompleted, setCredentialResultsCompleted] = React.useState(true);
-  const [selectedCredential, setSelectedCredential] = useState<AutoFillCredential | null>(null);
+  const pageSize = nativeAppApi.credentialResultsPageSize;
+  const [loading, setLoading] = React.useState(true);
+  const [credentials, setCredentials] = React.useState<AutoFillCredential[]>([]);
+  const [searching, setSearching] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [resultsCompleted, setResultsCompleted] = React.useState(true);
+  const [selectedCredential, setSelectedCredential] = React.useState<AutoFillCredential | null>(null);
   const [settings, setSettings] = React.useState<Settings>(new Settings());
-  const [groupCounts, setGroupCounts] = React.useState<number[]>([]);
-  const [groups, setGroups] = React.useState<string[]>([]);
-
   const [t] = useTranslation('global');
 
-  useEffect(() => {
-    const getStoredSettings = async () => {
-      const stored = await SettingsStore.getSettings();
-      setSettings(stored);
+  React.useEffect(() => {
+    const initialize = async () => {
+      setSettings(await SettingsStore.getSettings());
+      await bindSearchOrUrlResults();
+      await initScrollbars();
     };
 
-    getStoredSettings();
-    bindSearchOrUrlResults();
-    initScrollbars();
+    void initialize();
   }, []);
 
-  const handleSearchChange = async (searchText: string) => {
-    bindSearchOrUrlResults(searchText);
+  const search = async (query: string, skip = 0): Promise<AutoFillCredential[]> => {
+    const response = await nativeAppApi.search(query, skip, pageSize);
+    return response?.results ?? [];
   };
+
+  const getCredentialsForCurrentUrl = async (skip = 0): Promise<AutoFillCredential[]> => {
+    const tab = await BackgroundManager.getCurrentTab();
+    if (!tab?.url || !tab.id) return [];
+
+    const response = await nativeAppApi.credentialsForUrlIncludingPasswordless(tab.url, skip, pageSize);
+    return response?.results ?? [];
+  };
+
+  async function bindSearchOrUrlResults(searchText = '') {
+    const trimmed = searchText.trim();
+    setLoading(true);
+    setSearchQuery(trimmed);
+    setSelectedCredential(null);
+    setSearching(Boolean(trimmed));
+
+    const results = trimmed ? await search(trimmed) : await getCredentialsForCurrentUrl();
+    setCredentials(results);
+    setResultsCompleted(results.length < pageSize);
+    setLoading(false);
+  }
 
   const getNext = async () => {
     const updated = searchQuery ? await search(searchQuery, credentials.length) : await getCredentialsForCurrentUrl(credentials.length);
 
-    if (updated) {
-      
-      
-      
-      
-      
-      
-      
-
-      if (updated.length > 0) {
-        setCredentials([...credentials, ...updated]);
-
-        calculateGroupsSoFar([...credentials, ...updated]);
-      } else {
-        setCredentialResultsCompleted(true);
-      }
-    } else {
-      
-    }
-  };
-
-  const bindSearchOrUrlResults = async (searchText = '') => {
-    const trimmed = searchText.trim();
-
-    setLoading(true);
-    setCredentials([]);
-    setGroups([]);
-    setSearchQuery(trimmed);
-
-    if (trimmed != String()) {
-      const results = await search(trimmed);
-
-      setSearching(true);
-      setCredentialResultsCompleted(false);
-      setLoading(false);
-      if (results) {
-        
-        
-        
-        
-        
-        
-        
-
-        setCredentials(results);
-
-        calculateGroupsSoFar(results);
-
-        if (results && results[0]) {
-          setSelectedCredential(results[0]);
-        }
-      } else {
-        
-      }
-    } else {
-      const results = await getCredentialsForCurrentUrl();
-
-      setSearching(false);
-      setLoading(false);
-      if (results) {
-        setCredentials(results);
-
-        calculateGroupsSoFar(results);
-      } else {
-        
-      }
-
-      if (results && results[0]) {
-        setSelectedCredential(results[0]);
-      }
-    }
-  };
-
-  const search = async (query: string, skip = 0, take: number = nativeAppApi.credentialResultsPageSize): Promise<AutoFillCredential[] | undefined> => {
-    const response = await NativeAppApi.getInstance().search(query, skip, take);
-
-    return response ? response.results : undefined;
-  };
-
-  const getCredentialsForCurrentUrl = async (skip = 0, take = nativeAppApi.credentialResultsPageSize): Promise<AutoFillCredential[] | undefined> => {
-    const tab = await BackgroundManager.getCurrentTab();
-    const url = tab ? tab.url : undefined;
-    const tabId = tab?.id;
-
-    if (!url || !tabId) {
+    if (updated.length === 0) {
+      setResultsCompleted(true);
       return;
     }
 
-    const response = await NativeAppApi.getInstance().credentialsForUrl(url, skip, take);
-
-    return response ? response.results : undefined;
+    setCredentials(previous => [...previous, ...updated]);
+    setResultsCompleted(updated.length < pageSize);
   };
 
-  const Footer = () => {
-    return credentialResultsCompleted ? null : (
-      <div
-        style={{
-          padding: '2rem',
-          display: 'flex',
-          justifyContent: 'center',
-        }}
-      >
-        <CircularProgress size="1rem" />
-      </div>
-    );
-  };
-
-  const handleCreateNewEntry = async (): Promise<void> => {
+  const handleCreateNewEntry = async () => {
     const tab = await BackgroundManager.getCurrentTab();
-    const url = tab ? tab.url : undefined;
-    const tabId = tab?.id;
+    if (!tab?.url || !tab.id) return;
 
-    if (!url || !tabId) {
-      return;
+    try {
+      const delivered = await BackgroundManager.getInstance().openCreateNewDialog(tab.id);
+      if (!delivered) {
+        showToast(t('notification-toast.page-connection-unavailable'), 'error');
+        return;
+      }
+
+      window.close();
+    } catch (_error) {
+      showToast(t('notification-toast.page-connection-unavailable'), 'error');
     }
-
-    await BackgroundManager.getInstance().openCreateNewDialog(tabId);
-
-    window.close();
   };
 
-  const onItemClicked = async (credential: AutoFillCredential): Promise<void> => {
+  const fillWithCredential = async (credential: AutoFillCredential) => {
     const tab = await BackgroundManager.getCurrentTab();
-    const url = tab ? tab.url : undefined;
-    const tabId = tab?.id;
+    if (!tab?.url || !tab.id) return;
 
-    if (!url || !tabId) {
-      return;
+    try {
+      const delivered = await BackgroundManager.getInstance().fillWithCredential(tab.id, credential);
+      if (!delivered) {
+        showToast(t('notification-toast.page-connection-unavailable'), 'error');
+        return;
+      }
+
+      window.close();
+    } catch (_error) {
+      showToast(t('notification-toast.page-connection-unavailable'), 'error');
     }
-
-    await BackgroundManager.getInstance().fillWithCredential(tabId, credential);
-
-    window.close();
-  };
-
-  const onItemClickedAlternative = (credential: AutoFillCredential) => {
-    setSelectedCredential(credential);
   };
 
   const onCopyUsername = (credential: AutoFillCredential, notifyAction = true) => {
-    NativeAppApi.getInstance().copyField(credential.databaseId, credential.uuid, WellKnownField.username);
-
-    if (notifyAction) {
-      showToast(t('notification-toast.username-copied'));
-    }
+    void nativeAppApi.copyField(credential.databaseId, credential.uuid, WellKnownField.username);
+    if (notifyAction) showToast(t('notification-toast.username-copied'));
   };
 
   const onCopyPassword = (credential: AutoFillCredential, notifyAction = true) => {
-    NativeAppApi.getInstance().copyField(credential.databaseId, credential.uuid, WellKnownField.password);
-
-    if (notifyAction) {
-      showToast(t('notification-toast.password-copied'));
-    }
+    void nativeAppApi.copyField(credential.databaseId, credential.uuid, WellKnownField.password);
+    if (notifyAction) showToast(t('notification-toast.password-copied'));
   };
 
   const onCopyTotp = (credential: AutoFillCredential, notifyAction = true) => {
-    NativeAppApi.getInstance().copyField(credential.databaseId, credential.uuid, WellKnownField.totp, true);
-
-    if (notifyAction) {
-      showToast(t('notification-toast.totp-copied'));
-    }
+    void nativeAppApi.copyField(credential.databaseId, credential.uuid, WellKnownField.totp, true);
+    if (notifyAction) showToast(t('notification-toast.totp-copied'));
   };
 
   const onCopy = async (value: string) => {
-    const resp = await NativeAppApi.getInstance().copyString(value);
-
-    return resp?.success ?? false;
+    const response = await nativeAppApi.copyString(value);
+    return response?.success ?? false;
   };
 
-  const onRedirectUrl = async (newUrl: string): Promise<void> => {
+  const onRedirectUrl = async (newUrl: string) => {
     await browser.tabs.create({ url: newUrl });
   };
 
-  const getStatus = async () => {
-    return await NativeAppApi.getInstance().getStatus();
-  };
-
-  const calculateGroupsSoFar = React.useCallback((creds: AutoFillCredential[]) => {
-    const groups = creds.reduce((collectedGroups: string[], current) => {
-      if (!collectedGroups.includes(current.databaseName)) {
-        collectedGroups.push(current.databaseName);
-      }
-
-      return collectedGroups;
-    }, []);
-
-    const groupCounts: number[] = [];
-
-    groups.forEach(group => {
-      const groupCount = creds.filter(cred => cred.databaseName === group).length;
-      groupCounts.push(groupCount);
+  const groupedCredentials = React.useMemo(() => {
+    const groups = new Map<string, AutoFillCredential[]>();
+    credentials.forEach(credential => {
+      const groupName = credential.databaseName || t('databases-list-popup-component.title');
+      groups.set(groupName, [...(groups.get(groupName) ?? []), credential]);
     });
+    return groups;
+  }, [credentials, t]);
 
-    setGroupCounts(groupCounts);
-    setGroups(groups);
-  }, []);
+  const showDatabaseName = groupedCredentials.size > 1;
 
-  return (
-    <Box sx={{ flexGrow: 1, width: settings.hideCredentialDetailsOnPopup || credentials.length === 0 ? 500 : 700 }}>
-      <Grid container spacing={1}>
-        <Grid item xs={12}>
-          <Box sx={{ textAlign: 'center', p: 2, display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-            <SearchBar searchMode={SearchMode.Popup} autofocus={true} setSearching={setSearching} setLoading={setLoading} handleSearchChange={handleSearchChange} />
-            {!settings.hideCredentialDetailsOnPopup && (
-              <Button onClick={handleCreateNewEntry} variant="outlined" startIcon={<AddCircle />}>
-                {t('general.create')}
-              </Button>
-            )}
-          </Box>
-        </Grid>
-        <Grid item xs={settings.hideCredentialDetailsOnPopup || credentials.length === 0 ? 12 : 4.5}>
-          <Box>
-            <List
+  if (selectedCredential) {
+    return (
+      <Box
+        sx={{
+          width: 360,
+          maxWidth: 360,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}
+      >
+        <Box
+          sx={{
+            height: 48,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.55,
+            px: 0.75,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'strongbox.sidebar'
+          }}
+        >
+          <IconButton size="small" aria-label={t('general.back')} onClick={() => setSelectedCredential(null)}>
+            <ArrowBackIosNewRounded sx={{ fontSize: 16 }} />
+          </IconButton>
+          <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+            <Typography
               sx={{
-                minwidth: '200px',
                 overflow: 'hidden',
-                scrollbarWidth: 'none',
-                mt: 0,
-                pt: 0,
-                pb: 0,
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: '0.84rem',
+                fontWeight: 650
               }}
             >
-              {!loading ? (
-                credentials.length === 0 ? (
-                  <NoResultsFoundPopupComponent />
-                ) : (
-                  <Box key="parent-div" sx={{ maxHeight: '400px', overflowY: 'auto', pl: 1 }}>
-                    <GroupedVirtuoso
-                      style={{ height: 400 }}
-                      groupCounts={groupCounts}
-                      groupContent={index => {
-                        return (
-                          <Paper elevation={18} style={{ padding: '0.3rem 1rem', boxShadow: 'none' }}>
-                            {groups[index]}
-                          </Paper>
-                        );
-                      }}
-                      endReached={() => {
-                        getNext();
-                      }}
-                      itemContent={index => {
-                        const credential = credentials[index];
-                        return (
-                          <CredentialsListItem
-                            key={credential.uuid}
-                            credential={credential}
-                            showToast={showToast}
-                            onClick={credential => (settings.hideCredentialDetailsOnPopup ? onItemClicked(credential) : onItemClickedAlternative(credential))}
-                            selected={credential.uuid == selectedCredential?.uuid}
-                          />
-                        );
-                      }}
-                      components={{ Footer }}
-                    />
-                  </Box>
-                )
-              ) : (
-                <Box sx={{ height: 400, textAlign: 'center', pt: 5 }}>
-                  <CircularProgress size="1rem" />
-                  <Box>
-                    <Typography color="text.secondary" variant="body1" sx={{ textAlign: 'center' }}>
-                      {searching ? t('general.searching') : t('general.loading')}
-                    </Typography>
-                  </Box>
-                </Box>
-              )}
-            </List>
+              {selectedCredential.title}
+            </Typography>
+            <Typography
+              color="text.secondary"
+              sx={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: '0.67rem'
+              }}
+            >
+              {selectedCredential.username}
+            </Typography>
           </Box>
-        </Grid>
-        {!settings.hideCredentialDetailsOnPopup && credentials.length != 0 && (
-          <Grid item xs={7.5} sx={{ pr: 1 }}>
-            <Paper sx={{ textAlign: 'center', height: '100%', pb: 0, boxShadow: 'none' }}>
-              {credentials.length > 0 && selectedCredential && (
-                <Box sx={{ maxHeight: 400, overflowY: 'scroll', boxShadow: 'none' }}>
-                  <CredentialDetails
-                    getStatus={getStatus}
-                    onCopyUsername={onCopyUsername}
-                    onCopyPassword={onCopyPassword}
-                    onCopyTotp={onCopyTotp}
-                    onCopy={onCopy}
-                    onRedirectUrl={onRedirectUrl}
-                    notifyAction={showToast}
-                    credential={selectedCredential}
-                    showTitle={true}
-                    showModified={true}
-                    allowAutofillField={false}
-                    onFillSingleField={() => {
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<SendRounded sx={{ fontSize: 15 }} />}
+            onClick={() => fillWithCredential(selectedCredential)}
+            sx={{ minWidth: 0, px: 1 }}
+          >
+            {t('general.autofill')}
+          </Button>
+        </Box>
+
+        <Box
+          data-testid="popup-credential-details-scroll"
+          sx={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            overscrollBehavior: 'contain',
+            scrollbarGutter: 'stable',
+            p: 0.75
+          }}
+        >
+          <CredentialDetails
+            getStatus={() => nativeAppApi.getStatus()}
+            onCopyUsername={onCopyUsername}
+            onCopyPassword={onCopyPassword}
+            onCopyTotp={onCopyTotp}
+            onCopy={onCopy}
+            onRedirectUrl={onRedirectUrl}
+            notifyAction={showToast}
+            credential={selectedCredential}
+            showTitle={false}
+            showModified={true}
+            allowAutofillField={false}
+            onFillSingleField={() => undefined}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        width: 360,
+        maxWidth: 360,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}
+    >
+      <Box
+        sx={{
+          minHeight: 50,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.25,
+          px: 0.5,
+          py: 0.55,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'strongbox.sidebar'
+        }}
+      >
+        <Box
+          sx={{
+            width: 28,
+            height: 28,
+            display: 'grid',
+            placeItems: 'center',
+            color: 'primary.main'
+          }}
+        >
+          <KeyRounded sx={{ fontSize: 20 }} />
+        </Box>
+        <SearchBar
+          searchMode={SearchMode.Popup}
+          autofocus={true}
+          setSearching={setSearching}
+          setLoading={setLoading}
+          handleSearchChange={bindSearchOrUrlResults}
+        />
+        <IconButton size="small" aria-label={t('inline-mini-field-menu.create-new')} onClick={handleCreateNewEntry}>
+          <AddRounded sx={{ fontSize: 20 }} />
+        </IconButton>
+      </Box>
+
+      <List
+        disablePadding
+        sx={{
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          overscrollBehavior: 'contain',
+          scrollbarGutter: 'stable',
+          py: 0.35
+        }}
+      >
+        {loading ? (
+          <Box sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+            <Box sx={{ textAlign: 'center' }}>
+              <CircularProgress size={18} />
+              <Typography color="text.secondary" sx={{ mt: 0.5, fontSize: '0.7rem' }}>
+                {searching ? t('general.searching') : t('general.loading')}
+              </Typography>
+            </Box>
+          </Box>
+        ) : credentials.length === 0 ? (
+          <NoResultsFoundPopupComponent />
+        ) : (
+          <>
+            {Array.from(groupedCredentials.entries()).map(([groupName, values]) => (
+              <Box key={groupName}>
+                {showDatabaseName && (
+                  <ListSubheader
+                    disableSticky
+                    sx={{
+                      lineHeight: '24px',
+                      px: 1.25,
+                      fontSize: '0.65rem',
+                      color: 'text.secondary',
+                      bgcolor: 'transparent'
                     }}
-                  ></CredentialDetails>
-                </Box>
-              )}
-            </Paper>
-          </Grid>
+                  >
+                    {groupName}
+                  </ListSubheader>
+                )}
+                {values.map(credential => (
+                  <CredentialsListItem
+                    key={credential.uuid}
+                    credential={credential}
+                    onFill={fillWithCredential}
+                    onDetails={settings.hideCredentialDetailsOnPopup ? undefined : setSelectedCredential}
+                    showDatabaseName={false}
+                  />
+                ))}
+              </Box>
+            ))}
+            {!resultsCompleted && (
+              <Button fullWidth size="small" onClick={getNext} sx={{ my: 0.5, fontSize: '0.7rem' }}>
+                {t('general.load-more')}
+              </Button>
+            )}
+          </>
         )}
-      </Grid>
+      </List>
     </Box>
   );
 }

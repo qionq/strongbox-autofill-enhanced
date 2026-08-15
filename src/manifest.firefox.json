@@ -1,12 +1,12 @@
 {
   "manifest_version": 2,
-  "name": "Strongbox AutoFill",
-  "version": "1.2.3",
+  "name": "Strongbox AutoFill Enhanced",
+  "version": "1.2.3.1",
   "icons": {
     "128": "assets/icons/app-icon-blue-128.png"
   },
-  "description": "Strongbox Browser AutoFill Extension",
-  "short_name": "Strongbox",
+  "description": "Unofficial enhanced build of the Strongbox Browser AutoFill extension",
+  "short_name": "Strongbox Enhanced",
   "permissions": [
     "tabs",
     "nativeMessaging",
@@ -14,7 +14,7 @@
     "webNavigation",
     "storage"
   ],
-  "author": "Phoebe Code Limited",
+  "author": "Strongbox AutoFill Enhanced contributors",
   "background": {
     "scripts": [
       "js/background.bundle.js"
@@ -30,7 +30,7 @@
     "default_icon": {
       "128": "assets/icons/app-icon-blue-128.png"
     },
-    "default_title": "Strongbox",
+    "default_title": "Strongbox Enhanced",
     "default_popup": "popup.html"
   },
   "web_accessible_resources": [
@@ -54,8 +54,8 @@
     {
       "all_frames": true,
       "matches": [
-        "http:
-        "https:
+        "http://*/*",
+        "https://*/*"
       ],
       "js": [
         "js/content.bundle.js"

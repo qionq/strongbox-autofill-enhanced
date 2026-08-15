@@ -57,7 +57,7 @@ export class Utils {
   static mapProperties<T1, T2>(source: T1, target: T2, excludedProperties: string[] = []): T2 {
     for (const [key, value] of Object.entries(source as object)) {
       if (!excludedProperties.includes(key)) {
-        (target as any)[key] = value;
+        (target as unknown as Record<string, unknown>)[key] = value;
       }
     }
 

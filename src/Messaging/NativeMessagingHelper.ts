@@ -5,7 +5,7 @@ export class NativeMessagingHelper {
   private static instance: NativeMessagingHelper;
 
   private constructor() {
-    
+    // Singleton.
   }
 
   public static getInstance(): NativeMessagingHelper {

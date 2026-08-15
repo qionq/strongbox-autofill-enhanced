@@ -22,6 +22,11 @@ import { GetPasswordAndStrengthRequest } from '../Messaging/Protocol/GetPassword
 import { GetPasswordAndStrengthResponse } from '../Messaging/Protocol/GetPasswordAndStrengthResponse';
 import { SearchResponse } from '../Messaging/Protocol/SearchResponse';
 import { GetNewEntryDefaultsResponseV2 } from '../Messaging/Protocol/GetNewEntryDefaultsResponseV2';
+import { CustomFieldReference } from '../Messaging/Protocol/SingleFieldFillRequest';
+import { CustomFieldMappingStore } from './CustomFieldMappingStore';
+import { InlineMiniFieldIcon } from './InlineMiniFieldIcon';
+import { GetIconResponse } from '../Messaging/Protocol/GetIconResponse';
+import { hasActiveExtensionContext, runWithExtensionContext } from './ExtensionContextLifecycle';
 
 export interface MainPageInformation {
   title: string;
@@ -32,21 +37,79 @@ export interface MainPageInformation {
 }
 
 export class ContentScriptManager {
-  pageLoadFillDone = false;
   reactRoot: ReactDOM.Root;
   reactRootPopupMenu: ReactDOM.Root | null;
   currentInlineMenuInputElement: HTMLElement | null;
   iframeManager: IframeManager;
+  inlineFieldIcon: InlineMiniFieldIcon | null = null;
+  inlineFieldIconRole = '';
   hideInlineMenusForAWhile = false;
   showLargeTextView = false;
+  private dynamicInputObserver: MutationObserver | null = null;
+  private dynamicInputNotificationTimer: ReturnType<typeof setTimeout> | null = null;
+  private extensionContextDisposed = false;
 
   constructor() {
     this.iframeManager = new IframeManager(this);
   }
 
+  private disposeAfterExtensionContextInvalidated() {
+    if (this.extensionContextDisposed) return;
+    this.extensionContextDisposed = true;
+
+    this.removeFocusListener();
+    this.clearBlurTimeout();
+    if (this.dynamicInputNotificationTimer) {
+      clearTimeout(this.dynamicInputNotificationTimer);
+      this.dynamicInputNotificationTimer = null;
+    }
+    this.dynamicInputObserver?.disconnect();
+    this.dynamicInputObserver = null;
+    this.removeInlineFieldIcon();
+    this.iframeManager.remove();
+  }
+
+  private ensureActiveExtensionContext(): boolean {
+    if (this.extensionContextDisposed) return false;
+    if (hasActiveExtensionContext(() => browser.runtime.id)) return true;
+
+    this.disposeAfterExtensionContextInvalidated();
+    return false;
+  }
+
+  private async runWithActiveExtensionContext<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
+    if (this.extensionContextDisposed) return fallback;
+
+    return await runWithExtensionContext(
+      () => browser.runtime.id,
+      operation,
+      () => this.disposeAfterExtensionContextInvalidated(),
+      fallback
+    );
+  }
+
+  public runSafely(operation: () => Promise<unknown>): void {
+    void this.runWithActiveExtensionContext(async () => {
+      await operation();
+    }, undefined).catch(error => {
+      queueMicrotask(() => {
+        throw error;
+      });
+    });
+  }
+
+  private async sendRuntimeMessage<T>(message: Record<string, unknown>, fallback: T): Promise<T> {
+    return await this.runWithActiveExtensionContext(async () => {
+      return (await browser.runtime.sendMessage(message)) as T;
+    }, fallback);
+  }
+
   onDOMLoaded() {
 
+    if (!this.ensureActiveExtensionContext()) return;
+
     this.addFocusListener();
+    this.observeDynamicInputFields();
     
 
     
@@ -64,11 +127,51 @@ export class ContentScriptManager {
     
     
 
-    this.autoShowInlineMenuIfFocusedInputRecognized();
+    this.runSafely(() => this.autoShowInlineMenuIfFocusedInputRecognized());
+  }
+
+  private observeDynamicInputFields() {
+    if (this.dynamicInputObserver || !document.documentElement) return;
+
+    this.dynamicInputObserver = new MutationObserver(mutations => {
+      if (!this.ensureActiveExtensionContext()) return;
+
+      const inputStructureChanged = mutations.some(mutation => {
+        if (mutation.type === 'attributes') {
+          return mutation.target instanceof HTMLInputElement;
+        }
+
+        return Array.from(mutation.addedNodes).some(node => {
+          if (!(node instanceof Element)) return false;
+          return node.matches('input') || node.querySelector('input') !== null;
+        });
+      });
+
+      if (!inputStructureChanged) return;
+
+      if (this.dynamicInputNotificationTimer) {
+        clearTimeout(this.dynamicInputNotificationTimer);
+      }
+
+      // Let SPA frameworks finish mounting and enabling the field before the
+      // background process selects and sends an automatic-fill credential.
+      this.dynamicInputNotificationTimer = setTimeout(() => {
+        this.runSafely(async () => {
+          await browser.runtime.sendMessage({ type: 'content-input-fields-changed' });
+        });
+      }, 180);
+    });
+
+    this.dynamicInputObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['type', 'autocomplete', 'disabled', 'readonly', 'hidden'],
+    });
   }
 
   async getStatus(): Promise<GetStatusResponse | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-status' });
+    const ret = await this.sendRuntimeMessage<GetStatusResponse | null>({ type: 'get-status' }, null);
 
     
 
@@ -76,15 +179,15 @@ export class ContentScriptManager {
   }
 
   async getCredentials(skip: number, take: number): Promise<AutoFillCredential[] | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-credentials', details: { skip, take } });
+    const ret = await this.sendRuntimeMessage<AutoFillCredential[] | null>({ type: 'get-credentials', details: { skip, take } }, null);
 
     
 
     return ret;
   }
 
-  async getIcon(databaseId: string, nodeId: string) {
-    const ret = await browser.runtime.sendMessage({ type: 'get-icon', details: { databaseId, nodeId } });
+  async getIcon(databaseId: string, nodeId: string): Promise<GetIconResponse | null> {
+    const ret = await this.sendRuntimeMessage<GetIconResponse | null>({ type: 'get-icon', details: { databaseId, nodeId } }, null);
 
     
 
@@ -92,7 +195,7 @@ export class ContentScriptManager {
   }
 
   async getSearchCredentials(query: string, skip: number, take: number): Promise<SearchResponse | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-search', details: { query, skip, take } });
+    const ret = await this.sendRuntimeMessage<SearchResponse | null>({ type: 'get-search', details: { query, skip, take } }, null);
 
     
 
@@ -100,15 +203,15 @@ export class ContentScriptManager {
   }
 
   async getGroups(request: GetGroupsRequest): Promise<GetGroupsResponse | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-groups', details: request });
+    const ret = await this.sendRuntimeMessage<GetGroupsResponse | null>({ type: 'get-groups', details: request }, null);
 
     
 
     return ret;
   }
 
-  async launchStrongbox() {
-    const ret = await browser.runtime.sendMessage({ type: 'launch-strongbox' });
+  async launchStrongbox(): Promise<boolean> {
+    const ret = await this.sendRuntimeMessage<boolean>({ type: 'launch-strongbox' }, false);
 
     
 
@@ -116,32 +219,35 @@ export class ContentScriptManager {
   }
 
   async onCopyUsername(credential: AutoFillCredential) {
-    await browser.runtime.sendMessage({ type: 'copy-username', details: credential });
+    await this.sendRuntimeMessage<void>({ type: 'copy-username', details: credential }, undefined);
   }
 
   async onCopyPassword(credential: AutoFillCredential) {
-    await browser.runtime.sendMessage({ type: 'copy-password', details: credential });
+    await this.sendRuntimeMessage<void>({ type: 'copy-password', details: credential }, undefined);
   }
 
   async onCopyTotp(credential: AutoFillCredential) {
-    await browser.runtime.sendMessage({ type: 'copy-totp', details: credential });
+    await this.sendRuntimeMessage<void>({ type: 'copy-totp', details: credential }, undefined);
   }
 
   async onCopy(value: string) {
-    await browser.runtime.sendMessage({ type: 'copy-string', details: value });
+    await this.sendRuntimeMessage<void>({ type: 'copy-string', details: value }, undefined);
   }
 
   async onLaunchUrl(url: string) {
-    await browser.runtime.sendMessage({ type: 'content-script-requests-url-launch', details: url });
+    await this.sendRuntimeMessage<void>({ type: 'content-script-requests-url-launch', details: url }, undefined);
   }
 
   async unlockDatabase(uuid: string): Promise<UnlockResponse | null> {
-    const ret = await browser.runtime.sendMessage({
-      type: 'unlock-database',
-      details: {
-        uuid: uuid,
+    const ret = await this.sendRuntimeMessage<UnlockResponse | null>(
+      {
+        type: 'unlock-database',
+        details: {
+          uuid: uuid,
+        },
       },
-    });
+      null
+    );
 
     
 
@@ -149,7 +255,7 @@ export class ContentScriptManager {
   }
 
   async getNewEntryDefaults(request: GetNewEntryDefaultsRequest): Promise<GetNewEntryDefaultsResponse | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-new-entry-defaults', details: request });
+    const ret = await this.sendRuntimeMessage<GetNewEntryDefaultsResponse | null>({ type: 'get-new-entry-defaults', details: request }, null);
 
     
 
@@ -157,7 +263,7 @@ export class ContentScriptManager {
   }
 
   async getNewEntryDefaultsV2(request: GetNewEntryDefaultsRequest): Promise<GetNewEntryDefaultsResponseV2 | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-new-entry-defaults-v2', details: request });
+    const ret = await this.sendRuntimeMessage<GetNewEntryDefaultsResponseV2 | null>({ type: 'get-new-entry-defaults-v2', details: request }, null);
 
     
 
@@ -165,7 +271,7 @@ export class ContentScriptManager {
   }
 
   async generatePassword(request: GeneratePasswordRequest): Promise<GeneratePasswordResponse | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'generate-password', details: request });
+    const ret = await this.sendRuntimeMessage<GeneratePasswordResponse | null>({ type: 'generate-password', details: request }, null);
 
     
 
@@ -173,7 +279,7 @@ export class ContentScriptManager {
   }
 
   async generatePasswordV2(): Promise<GeneratePasswordV2Response | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'generate-password-v2' });
+    const ret = await this.sendRuntimeMessage<GeneratePasswordV2Response | null>({ type: 'generate-password-v2' }, null);
 
     
 
@@ -181,7 +287,7 @@ export class ContentScriptManager {
   }
 
   async getPasswordStrength(request: GetPasswordAndStrengthRequest): Promise<GetPasswordAndStrengthResponse | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-password-strength', details: request });
+    const ret = await this.sendRuntimeMessage<GetPasswordAndStrengthResponse | null>({ type: 'get-password-strength', details: request }, null);
 
     
 
@@ -189,7 +295,7 @@ export class ContentScriptManager {
   }
 
   async createNewEntry(details: CreateEntryRequest): Promise<CreateEntryResponse | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'create-new-entry', details: details });
+    const ret = await this.sendRuntimeMessage<CreateEntryResponse | null>({ type: 'create-new-entry', details: details }, null);
 
     
 
@@ -197,7 +303,7 @@ export class ContentScriptManager {
   }
 
   async copyTotpCodeIfConfiguredAfterFill(details: AutoFillCredential): Promise<void> {
-    const ret = await browser.runtime.sendMessage({ type: 'copy-totp-after-fill', details: details });
+    const ret = await this.sendRuntimeMessage<void>({ type: 'copy-totp-after-fill', details: details }, undefined);
 
     
 
@@ -205,7 +311,7 @@ export class ContentScriptManager {
   }
 
   async getCurrentTab(): Promise<browser.Tabs.Tab | null> {
-    const ret = await browser.runtime.sendMessage({ type: 'get-tab-for-this-content-script' });
+    const ret = await this.sendRuntimeMessage<browser.Tabs.Tab | null>({ type: 'get-tab-for-this-content-script' }, null);
 
     
 
@@ -273,7 +379,10 @@ export class ContentScriptManager {
       const thisTab = await this.getCurrentTab();
       return thisTab?.favIconUrl ?? null;
     } else {
-      const url = new URL(browser.runtime.getURL('/_favicon/'));
+      const extensionUrl = await this.runWithActiveExtensionContext(async () => browser.runtime.getURL('/_favicon/'), '');
+      if (!extensionUrl) return null;
+
+      const url = new URL(extensionUrl);
       url.searchParams.set('pageUrl', document.location.href);
       url.searchParams.set('size', '128');
       return url.toString();
@@ -296,7 +405,7 @@ export class ContentScriptManager {
 
     if (!this.showLargeTextView) {
       settings.uuidForLargeTextView = String();
-      SettingsStore.setSettings(settings);
+      await SettingsStore.setSettings(settings);
     }
 
     if (!Utils.isMacintosh()) {
@@ -321,8 +430,11 @@ export class ContentScriptManager {
   
 
   listen = false; 
-  focusOrBlurListener: EventListener = event => this.onFocusChanged(event);
+  focusOrBlurListener: EventListener = event => {
+    this.runSafely(() => this.onFocusChanged(event));
+  };
   addFocusListener() {
+    if (!this.ensureActiveExtensionContext()) return;
     
     this.listen = true;
     document.addEventListener('focus', this.focusOrBlurListener, true);
@@ -336,7 +448,7 @@ export class ContentScriptManager {
     document.removeEventListener('blur', this.focusOrBlurListener, true);
   }
 
-  timeout: NodeJS.Timeout | null;
+  timeout: ReturnType<typeof setTimeout> | null;
   clearBlurTimeout() {
     
     if (this.timeout) {
@@ -346,6 +458,8 @@ export class ContentScriptManager {
   }
 
   async onFocusChanged(event: Event) {
+    if (!this.ensureActiveExtensionContext()) return;
+
     this.currentInlineMenuInputElement = null;
 
     if (!this.listen) {
@@ -362,22 +476,25 @@ export class ContentScriptManager {
     if (event.type === 'blur') {
       
       this.timeout = setTimeout(() => {
-        this.autoShowInlineMenuIfFocusedInputRecognized();
+        this.runSafely(() => this.autoShowInlineMenuIfFocusedInputRecognized());
         this.timeout = null;
       }, 200);
     } else {
-      this.autoShowInlineMenuIfFocusedInputRecognized();
+      await this.autoShowInlineMenuIfFocusedInputRecognized();
     }
   }
 
   
 
   async autoShowInlineMenuIfFocusedInputRecognized() {
+    if (!this.ensureActiveExtensionContext()) return;
+
     if (document.activeElement && document.activeElement instanceof HTMLInputElement) {
       const focusedElement = document.activeElement as HTMLInputElement;
 
       const shouldRun = await this.shouldAutoShowInlineMenuOnFocus();
       if (!shouldRun) {
+        this.removeInlineFieldIcon();
         return;
       }
 
@@ -385,19 +502,58 @@ export class ContentScriptManager {
       const isRecognizedUsernameField = usernames.some(input => input == focusedElement);
       const passwords = await PageAnalyser.getAllPasswordInputs();
       const isRecognizedPasswordField = passwords.some(input => input == focusedElement);
+      const isRecognizedOneTimeCodeField = PageAnalyser.isOneTimeCodeInput(focusedElement);
+      const rememberedCustomField = await CustomFieldMappingStore.getMappingForInput(focusedElement, document.location.href);
 
-      if (isRecognizedUsernameField || isRecognizedPasswordField) {
-
+      if (isRecognizedUsernameField || isRecognizedPasswordField || isRecognizedOneTimeCodeField || rememberedCustomField) {
         this.currentInlineMenuInputElement = focusedElement;
-
-        this.showInlineMenuOnInputElement(focusedElement, isRecognizedPasswordField);
-      } else {
+        this.showInlineIconOnInputElement(focusedElement, isRecognizedPasswordField, isRecognizedOneTimeCodeField);
+        return;
       }
-    } else {
     }
+
+    this.removeInlineFieldIcon();
+  }
+
+  showInlineIconOnInputElement(fieldElement: HTMLInputElement, isPasswordField: boolean, isOneTimeCodeField: boolean) {
+    const role = isOneTimeCodeField ? 'one-time-code' : isPasswordField ? 'password' : 'username-or-custom';
+    const segmentedFields = isOneTimeCodeField ? PageAnalyser.getSegmentedOneTimeCodeInputs(fieldElement) : [];
+    const positionAnchor = segmentedFields.length > 1 ? segmentedFields[segmentedFields.length - 1] : fieldElement;
+    const placeOutsideField = segmentedFields.length > 1;
+
+    if (
+      this.inlineFieldIcon?.fieldElement === fieldElement &&
+      this.inlineFieldIcon.positionAnchorElement === positionAnchor &&
+      this.inlineFieldIcon.placeOutsideField === placeOutsideField &&
+      this.inlineFieldIconRole === role
+    ) {
+      this.inlineFieldIcon.bindIconPosition();
+      void this.inlineFieldIcon.show(true);
+      return;
+    }
+
+    this.removeInlineFieldIcon();
+    this.inlineFieldIconRole = role;
+    this.inlineFieldIcon = InlineMiniFieldIcon.attachToField(
+      fieldElement,
+      false,
+      () => {
+        this.runSafely(() => this.showInlineMenuOnInputElement(fieldElement, isPasswordField, isOneTimeCodeField));
+      },
+      positionAnchor,
+      placeOutsideField
+    );
+  }
+
+  removeInlineFieldIcon() {
+    this.inlineFieldIcon?.detach();
+    this.inlineFieldIcon = null;
+    this.inlineFieldIconRole = '';
   }
 
   async forceShowInlineMenuOnCurrentInput() {
+    if (!this.ensureActiveExtensionContext()) return false;
+
     if (!Utils.isMacintosh()) {
       return false;
     }
@@ -409,20 +565,16 @@ export class ContentScriptManager {
 
       const passwords = await PageAnalyser.getAllPasswordInputs();
       const isLikelyPasswordField = passwords.some(input => input == focusedElement) || focusedElement.type === 'password';
+      const isLikelyOneTimeCodeField = PageAnalyser.isOneTimeCodeInput(focusedElement);
 
-      await this.showInlineMenuOnInputElement(focusedElement, isLikelyPasswordField);
-    } else {
+      await this.showInlineMenuOnInputElement(focusedElement, isLikelyPasswordField, isLikelyOneTimeCodeField);
     }
   }
 
-  async showInlineMenuOnInputElement(fieldElement: HTMLInputElement, isPasswordField: boolean) {
-    
-    const status = await this.getStatus();
+  async showInlineMenuOnInputElement(fieldElement: HTMLInputElement, isPasswordField: boolean, isOneTimeCodeField = false) {
+    if (!this.ensureActiveExtensionContext()) return;
 
-    if (status == null) {
-    }
-
-    this.iframeManager.initialize(IframeComponentTypes.InlineMiniFieldMenu, fieldElement, isPasswordField);
+    this.iframeManager.initialize(IframeComponentTypes.InlineMiniFieldMenu, fieldElement, isPasswordField, '', isOneTimeCodeField);
   }
 
   async getUnlockableDatabases(status: GetStatusResponse | null): Promise<LastKnownDatabasesItem[]> {
@@ -434,12 +586,31 @@ export class ContentScriptManager {
     }
   }
 
-  async onFillWithCredential(credential: AutoFillCredential, inlineFieldInitiator: HTMLInputElement | null = null, inlineFieldInitiatorIsPassword = false) {
+  async onFillWithCredential(
+    credential: AutoFillCredential,
+    inlineFieldInitiator: HTMLInputElement | null = null,
+    inlineFieldInitiatorIsPassword = false,
+    inlineFieldInitiatorIsOneTimeCode = false
+  ) {
+    if (inlineFieldInitiator && inlineFieldInitiatorIsOneTimeCode) {
+      const currentTotp = AutoFillCredential.getCurrentTotpCode(credential, false);
+      if (currentTotp) {
+        await this.autoFillSingleField(currentTotp, inlineFieldInitiator, false, undefined, true);
+      }
+      return;
+    }
+
     await this.autoFillWithCredential(credential, false, inlineFieldInitiator, inlineFieldInitiatorIsPassword);
   }
 
-  async onFillSingleField(text: string, inlineFieldInitiator: HTMLInputElement, appendValue = false) {
-    await this.autoFillSingleField(text, inlineFieldInitiator, appendValue);
+  async onFillSingleField(
+    text: string,
+    inlineFieldInitiator: HTMLInputElement,
+    appendValue = false,
+    customField?: CustomFieldReference,
+    oneTimeCode = false
+  ) {
+    await this.autoFillSingleField(text, inlineFieldInitiator, appendValue, customField, oneTimeCode);
   }
 
   async autoFillWithCredential(
@@ -457,11 +628,6 @@ export class ContentScriptManager {
         return false;
       }
 
-      if (this.pageLoadFillDone) {
-        return false;
-      }
-
-      this.pageLoadFillDone = true;
     }
 
     
@@ -469,7 +635,7 @@ export class ContentScriptManager {
     this.removeFocusListener();
 
     const autoFiller = new AutoFiller();
-    const filled = await autoFiller.doIt(credential, inlineFieldInitiator, inlineFieldInitiatorIsPassword, fillMultiple);
+    const filled = await autoFiller.doIt(credential, inlineFieldInitiator, inlineFieldInitiatorIsPassword, fillMultiple, isPageLoadFill);
 
     setTimeout(() => {
       this.addFocusListener();
@@ -477,13 +643,19 @@ export class ContentScriptManager {
 
     if (filled) {
       this.iframeManager.remove();
-      this.copyTotpCodeIfConfiguredAfterFill(credential);
+      this.runSafely(() => this.copyTotpCodeIfConfiguredAfterFill(credential));
     }
 
     return filled;
   }
 
-  async autoFillSingleField(text: string, inlineFieldInitiator: HTMLInputElement, appendValue = false): Promise<void> {
+  async autoFillSingleField(
+    text: string,
+    inlineFieldInitiator: HTMLInputElement,
+    appendValue = false,
+    customField?: CustomFieldReference,
+    oneTimeCode = false
+  ): Promise<void> {
 
     
 
@@ -491,7 +663,20 @@ export class ContentScriptManager {
 
     const autoFiller = new AutoFiller();
 
-    await autoFiller.doItSingleField(text, inlineFieldInitiator, appendValue);
+    if (customField && !appendValue) {
+      try {
+        await CustomFieldMappingStore.remember(inlineFieldInitiator, document.location.href, customField);
+      } catch (_error) {
+        // A storage failure must not prevent the requested one-time fill.
+      }
+    }
+
+    if (oneTimeCode && !appendValue) {
+      const segmentedFields = PageAnalyser.getSegmentedOneTimeCodeInputs(inlineFieldInitiator);
+      await autoFiller.doItOneTimeCode(text, segmentedFields.length > 0 ? segmentedFields : [inlineFieldInitiator]);
+    } else {
+      await autoFiller.doItSingleField(text, inlineFieldInitiator, appendValue);
+    }
 
     setTimeout(() => {
       this.addFocusListener();

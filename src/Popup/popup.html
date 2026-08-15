@@ -1,15 +1,34 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=550" />
-    <!-- <meta name="viewport" content="initial-scale=1, width=device-width" /> -->
-    <title>Popup</title>
+    <meta name="viewport" content="initial-scale=1, width=device-width" />
+    <title>Strongbox AutoFill Enhanced</title>
 
     <style>
+      :root {
+        --strongbox-popup-width: 360px;
+        --strongbox-popup-height: 520px;
+      }
+
+      html,
+      body,
+      #popup-root {
+        width: var(--strongbox-popup-width);
+        min-width: var(--strongbox-popup-width);
+        max-width: var(--strongbox-popup-width);
+        height: var(--strongbox-popup-height);
+        min-height: var(--strongbox-popup-height);
+        max-height: var(--strongbox-popup-height);
+        overflow: hidden;
+      }
+
       body {
         padding: 0;
         margin: 0;
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
     </style>
     <style>

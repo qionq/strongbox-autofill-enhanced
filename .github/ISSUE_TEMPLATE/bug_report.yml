@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible problem using sanitised test data
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Strongbox AutoFill Enhanced.
+
+        **Do not include real passwords, usernames, TOTP seeds or codes, recovery codes, KDBX files, private URLs, account identifiers, extension-storage exports, or unredacted screenshots.** Use synthetic credentials and replace private site details with a minimal test page whenever possible.
+
+  - type: input
+    id: commit
+    attributes:
+      label: Installed commit or release
+      description: Paste the commit hash or enhanced release version you built.
+      placeholder: 1.2.3-enhanced.1 or a commit hash
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome 140 on macOS 15
+    validations:
+      required: true
+
+  - type: input
+    id: strongbox
+    attributes:
+      label: Strongbox version
+      placeholder: Strongbox version and edition
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use only synthetic data. If a site is relevant, provide a public URL or a minimal HTML reproduction.
+      placeholder: |
+        1. Build the extension at ...
+        2. Open a test page containing ...
+        3. Select ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Observed behaviour
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I replaced all credentials, codes, private URLs, account identifiers, and personal information with synthetic values.
+          required: true
+        - label: I understand that this is an unofficial enhanced build without a support guarantee.
+          required: true

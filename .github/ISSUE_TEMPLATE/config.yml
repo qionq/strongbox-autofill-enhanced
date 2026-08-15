@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Official Strongbox support
+    url: https://strongboxsafe.com/support/
+    about: Use this for the Strongbox app or the official browser extension.

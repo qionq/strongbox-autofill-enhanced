@@ -1,5 +1,5 @@
 import { CircularProgress } from '@mui/material';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Utils } from '../../Utils';
 
 interface CountdownProps {
@@ -9,26 +9,40 @@ interface CountdownProps {
 
 const Countdown = (props: CountdownProps) => {
   const { seconds, onLoop } = props;
-  const [count, setCount] = useState(seconds);
+  const getCycle = () => Math.floor(Date.now() / 1000 / seconds);
+  const getRemainingSeconds = () => seconds - ((Date.now() / 1000) % seconds);
+  const [count, setCount] = useState(getRemainingSeconds);
+  const cycle = useRef(getCycle());
+  const onLoopRef = useRef(onLoop);
 
   useEffect(() => {
+    onLoopRef.current = onLoop;
+  }, [onLoop]);
+
+  useEffect(() => {
+    cycle.current = getCycle();
+
+    const update = () => {
+      const nextCycle = getCycle();
+      setCount(getRemainingSeconds());
+
+      if (nextCycle !== cycle.current) {
+        cycle.current = nextCycle;
+        onLoopRef.current();
+      }
+    };
+
+    update();
     const timerId = setInterval(() => {
-      setCount(prevCount => prevCount - 1);
-    }, 1000);
+      update();
+    }, 250);
 
     return () => clearInterval(timerId);
-  }, []);
+  }, [seconds]);
 
-  useEffect(() => {
-    if (count < 0) {
-      setCount(seconds);
-      onLoop();
-    }
-  }, [count]);
+  const percentage = Math.max(0, Math.min(100, (count / seconds) * 100));
 
-  const percentage = Math.floor((count / seconds) * 100);
-
-  return <CircularProgress style={{ color: Utils.getEntropyColor(percentage) }} variant="determinate" value={percentage} />;
+  return <CircularProgress aria-label="TOTP" size={18} thickness={5} style={{ color: Utils.getEntropyColor(percentage) }} variant="determinate" value={percentage} />;
 };
 
 export default Countdown;

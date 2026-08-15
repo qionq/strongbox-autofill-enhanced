@@ -6,7 +6,6 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
-  AlertTitle,
   Autocomplete,
   Backdrop,
   Box,
@@ -89,19 +88,19 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
   const { sizeHandler } = useCustomStyle();
 
   React.useEffect(() => {
-    loadDatabasesAtStartup().catch(error => {
+    loadDatabasesAtStartup().catch(() => {
       showErrorToast(t('create-new-entry-dialog.could-not-load-databases'));
     });
   }, []);
 
   React.useEffect(() => {
-    refreshDefaults().catch(error => {
+    refreshDefaults().catch(() => {
       showErrorToast(t('create-new-entry-dialog.could-not-load-defaults'));
     });
   }, [databases, selectedDatabaseIdx]);
 
   React.useEffect(() => {
-    refreshGroups().catch(error => {
+    refreshGroups().catch(() => {
       showErrorToast(t('create-new-entry-dialog.could-not-refresh-groups'));
     });
   }, [databases, selectedDatabaseIdx]);
@@ -322,7 +321,8 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
     return selectedDatabaseIdx === null ? false : !databases[selectedDatabaseIdx].locked;
   };
 
-  const handleUsernameChange = (event: any, newInputValue: string) => {
+  const handleUsernameChange = (event: React.SyntheticEvent, newInputValue: string) => {
+    void event;
     setUsername(newInputValue);
   };
 
@@ -385,7 +385,7 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
             severity={toastIsError ? 'error' : 'success'}
             action={
               <IconButton
-                aria-label="close"
+                aria-label={t('general.close')}
                 color="inherit"
                 size="small"
                 onClick={() => {
@@ -397,7 +397,6 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
             }
             sx={{ mb: 2 }}
           >
-            <AlertTitle>{toastIsError ? 'Error' : 'Success'}</AlertTitle>
             {toastMessage}
           </Alert>
         </Collapse>
@@ -483,7 +482,7 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
                     type={showPassword ? 'text' : 'password'}
                     endAdornment={
                       <InputAdornment position="end">
-                        <IconButton aria-label="toggle password visibility" onClick={handleClickShowPassword} onMouseDown={handleMouseDownPassword} edge="end">
+                        <IconButton aria-label={t('general.show-hide')} onClick={handleClickShowPassword} onMouseDown={handleMouseDownPassword} edge="end">
                           {showPassword ? <VisibilityOff /> : <Visibility />}
                         </IconButton>
                       </InputAdornment>
@@ -552,7 +551,7 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
                         style: { zIndex: 2147483641 }, 
                       }}
                       value={databases.length === 0 ? 'no-available-databases' : selectedDatabaseIdx !== null ? selectedDatabaseIdx.toString() : ''}
-                      label="Database"
+                      label={t('create-new-entry-dialog.database')}
                       fullWidth
                       disabled={databases.length === 0}
                       onChange={handleChangeDatabase}
@@ -562,7 +561,9 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
                           <MenuItem value={idx.toString()} key={idx}>
                             <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
                               {database.locked ? <Lock color="error" /> : <LockOpen />}
-                              <Box>{database.locked ? database.nickName + ' (Locked)' : database.nickName}</Box>
+                              <Box>
+                                {database.locked ? `${database.nickName} (${t('database-list-item.locked')})` : database.nickName}
+                              </Box>
                             </div>
                           </MenuItem>
                         ))
@@ -589,7 +590,7 @@ export default function CreateNewEntryDialog(props: CreateNewEntryDialogProps) {
                         style: { zIndex: 2147483641 }, 
                       }}
                       value={selectedGroup}
-                      label="Group"
+                      label={t('create-new-entry-dialog.group')}
                       fullWidth
                       
                       sx={

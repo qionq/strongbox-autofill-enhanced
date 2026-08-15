@@ -1,4 +1,5 @@
 import browser from 'webextension-polyfill';
+import i18next from 'i18next';
 
 export enum IconState {
   disconnected,
@@ -24,7 +25,7 @@ export class IconManager {
           },
         });
 
-        await action.setTitle({ title: 'Strongbox: Not Running' });
+        await action.setTitle({ title: i18next.t('not-running-popup-component.title', { ns: 'global' }) });
       } else if (state == IconState.allDatabasesLocked) {
         await action.setIcon({
           path: {
@@ -33,7 +34,9 @@ export class IconManager {
           },
         });
 
-        await action.setTitle({ title: 'Strongbox: Locked' });
+        await action.setTitle({
+          title: `${i18next.t('general.enhanced-app-name', { ns: 'global' })}: ${i18next.t('database-list-item.locked', { ns: 'global' })}`,
+        });
       } else {
         await action.setIcon({
           path: {
@@ -41,12 +44,13 @@ export class IconManager {
             38: '/assets/icons/app-icon-blue-38.png',
           },
         });
-        await action.setTitle({ title: 'Strongbox' });
+        await action.setTitle({ title: i18next.t('general.enhanced-app-name', { ns: 'global' }) });
       }
 
       await action.setBadgeText({ text: badgeText });
       await action.setBadgeBackgroundColor({ color: badgeColor });
     } catch (error) {
+      // Icon updates are cosmetic and can fail while a browser window is closing.
     }
   }
 }

@@ -7,10 +7,11 @@ import { DatabaseSummary } from '../Messaging/Protocol/DatabaseSummary';
 import { NativeAppApi } from '../Messaging/NativeAppApi';
 import { BackgroundManager } from '../Background/BackgroundManager';
 import { useTranslation } from 'react-i18next';
+import type { PopupToastSeverity } from './PopupComponent';
 
 interface DatabaseListItemProps {
   database: DatabaseSummary;
-  showToast: (message: string) => void;
+  showToast: (message: string, severity?: PopupToastSeverity) => void;
 }
 
 export default function DatabaseListItem({ database }: DatabaseListItemProps) {
@@ -28,16 +29,24 @@ export default function DatabaseListItem({ database }: DatabaseListItemProps) {
   };
 
   return (
-    <Paper elevation={18}>
+    <Paper
+      elevation={0}
+      sx={{
+        mx: 0.75,
+        mb: 0.45,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 2.25,
+        overflow: 'hidden'
+      }}
+    >
       <Box
         display="flex"
         sx={{
-          m: '5px',
-          p: 1,
-          width: '100%',
-          height: '100%',
+          p: 0.75,
+          minWidth: 0,
           alignContent: 'center',
-          alignItems: 'center',
+          alignItems: 'center'
         }}
       >
         <Box
@@ -46,7 +55,7 @@ export default function DatabaseListItem({ database }: DatabaseListItemProps) {
             alignContent: 'center',
             justifyContent: 'center',
             marginTop: 'auto',
-            marginBottom: 'auto',
+            marginBottom: 'auto'
           }}
         >
           <Box display="flex" flexDirection="column" alignContent="center">
@@ -67,7 +76,7 @@ export default function DatabaseListItem({ database }: DatabaseListItemProps) {
           flexGrow={1}
           sx={{
             p: '0',
-            ml: 1,
+            ml: 1
           }}
         >
           <Box>
@@ -76,7 +85,7 @@ export default function DatabaseListItem({ database }: DatabaseListItemProps) {
               sx={{
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                textOverflow: 'ellipsis'
               }}
             >
               {database.nickName}
@@ -90,14 +99,18 @@ export default function DatabaseListItem({ database }: DatabaseListItemProps) {
               sx={{
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                textOverflow: 'ellipsis'
               }}
             >
-              {database.autoFillEnabled ? (database.locked ? t('database-list-item.locked') : t('database-list-item.unlocked')) : t('autofill-not-enabled')}
+              {database.autoFillEnabled
+                ? database.locked
+                  ? t('database-list-item.locked')
+                  : t('database-list-item.unlocked')
+                : t('database-list-item.autofill-not-enabled')}
             </Typography>
           </Box>
         </Box>
-        <Box sx={{ ml: 2, mr: 1 }}>
+        <Box sx={{ ml: 1, mr: 0.25, flex: '0 0 auto' }}>
           {database.autoFillEnabled ? (
             database.locked ? (
               <Button

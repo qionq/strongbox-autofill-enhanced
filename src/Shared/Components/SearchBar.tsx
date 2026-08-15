@@ -1,56 +1,13 @@
 import * as React from 'react';
-import { styled, alpha } from '@mui/material/styles';
-import Box from '@mui/material/Box';
-import InputBase from '@mui/material/InputBase';
-import SearchIcon from '@mui/icons-material/Search';
 import debounce from 'lodash.debounce';
+import { CloseRounded, SearchRounded } from '@mui/icons-material';
+import { Box, IconButton, InputBase } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { IconButton } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
 
 export enum SearchMode {
   Popup,
   InlineMenu,
 }
-
-const Search = styled('div')(({ theme }) => ({
-  position: 'relative',
-  borderRadius: '5px',
-  backgroundColor: alpha(theme.palette.common.white, 0.15),
-  '&:hover': {
-    backgroundColor: alpha(theme.palette.common.white, 0.25),
-  },
-  marginRight: theme.spacing(2),
-  marginLeft: 0,
-  width: '100%',
-  [theme.breakpoints.up('sm')]: {
-    marginLeft: theme.spacing(3),
-    width: 'auto',
-  },
-}));
-
-const SearchIconWrapper = styled('div')(({ theme }) => ({
-  padding: theme.spacing(0, 2),
-  height: '100%',
-  position: 'absolute',
-  pointerEvents: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-}));
-
-const StyledInputBase = styled(InputBase)(({ theme }) => ({
-  color: 'inherit',
-  '& .MuiInputBase-input': {
-    padding: theme.spacing(1, 1, 1, 0),
-    paddingLeft: `calc(1em + ${theme.spacing(4)})`,
-    transition: theme.transitions.create('width'),
-    width: '100%',
-    [theme.breakpoints.up('md')]: {
-      width: '20ch',
-    },
-  },
-}));
 
 interface SearchBarProps {
   handleSearchChange: (searchText: string) => Promise<void>;
@@ -58,73 +15,76 @@ interface SearchBarProps {
   setSearching: (loading: boolean) => void;
   autofocus: boolean;
   searchMode: SearchMode;
-  onDismissButon?: (text: string) => void; 
+  onDismissButon?: (text: string) => void;
 }
 
 export default function SearchBar(props: SearchBarProps) {
   const [searchText, setSearchText] = React.useState('');
   const [t] = useTranslation('global');
+  const searchHandler = React.useRef(props.handleSearchChange);
+  searchHandler.current = props.handleSearchChange;
+  const debouncedSearch = React.useMemo(
+    () =>
+      debounce((text: string) => {
+        void searchHandler.current(text);
+      }, 250),
+    []
+  );
 
-  const debouncedSearch = React.useRef(
-    debounce((text: string) => {
-      props.handleSearchChange(text);
-    }, 300)
-  ).current;
-
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    searchChange(event.target.value);
-  };
+  React.useEffect(() => {
+    return () => debouncedSearch.cancel();
+  }, [debouncedSearch]);
 
   const searchChange = (text: string) => {
     setSearchText(text);
     props.setLoading(true);
-
-    if (text.trim() !== String()) {
-      props.setSearching(true);
-    } else {
-      props.setSearching(false);
-    }
-
+    props.setSearching(Boolean(text.trim()));
     debouncedSearch(text);
   };
 
   const handleDismissClick = () => {
-    searchChange(String());
-    if (!searchText.trim() && props.onDismissButon) {
-      props.onDismissButon(searchText.trim());
+    if (searchText) {
+      searchChange('');
+      return;
     }
+
+    props.onDismissButon?.('');
   };
 
-  return SearchMode.InlineMenu == props.searchMode ? (
-    <Box sx={{ display: 'flex', alignItems: 'center', pl: '10px' }}>
-      <SearchIcon style={{ marginRight: '10px' }} />
+  return (
+    <Box
+      sx={{
+        minWidth: 0,
+        flexGrow: 1,
+        height: props.searchMode === SearchMode.Popup ? 32 : 34,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.35,
+        px: 0.7,
+        borderRadius: 2.1,
+        bgcolor: 'strongbox.field',
+        boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.12)',
+      }}
+    >
+      <SearchRounded sx={{ flex: '0 0 auto', fontSize: 17, color: 'text.secondary' }} />
       <InputBase
         placeholder={t('search-bar.place-holder')}
-        style={{ flex: 1 }}
-        inputProps={{ 'aria-label': 'search' }}
-        onChange={handleSearchChange}
+        inputProps={{ 'aria-label': t('general.search') }}
+        onChange={event => searchChange(event.target.value)}
         value={searchText}
         autoFocus={props.autofocus}
+        sx={{
+          minWidth: 0,
+          flexGrow: 1,
+          fontSize: '0.75rem',
+          '& input': { py: 0.25 },
+        }}
       />
-      <IconButton sx={{ color: 'gray' }} onClick={handleDismissClick}>
-        <CloseIcon />
-      </IconButton>
-    </Box>
-  ) : (
-    <Box sx={{ flexGrow: 1, pr: '10px', pl: '10px' }}>
-      <Search style={{ marginRight: '0px', marginLeft: 0 }}>
-        <SearchIconWrapper>
-          <SearchIcon />
-        </SearchIconWrapper>
-        <StyledInputBase
-          placeholder={t('search-bar.place-holder')}
-          style={{ width: '100%' }}
-          inputProps={{ 'aria-label': 'search' }}
-          onChange={handleSearchChange}
-          value={searchText}
-          autoFocus={props.autofocus}
-        />
-      </Search>
+      {(searchText || props.searchMode === SearchMode.InlineMenu) && (
+        <IconButton size="small" aria-label={t('general.close')} onClick={handleDismissClick} sx={{ p: 0.2, color: 'text.secondary' }}>
+          <CloseRounded sx={{ fontSize: 15 }} />
+        </IconButton>
+      )}
     </Box>
   );
 }

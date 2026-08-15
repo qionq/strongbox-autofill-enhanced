@@ -1,11 +1,9 @@
 import { Box, Checkbox, FormControlLabel, FormGroup, List, ListItem } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 import { Settings } from '../Settings/Settings';
-import { useCustomStyle } from '../Contexts/CustomStyleContext';
 import { SettingsStore } from '../Settings/SettingsStore';
 import { useTranslation } from 'react-i18next';
 import { BackgroundManager } from '../Background/BackgroundManager';
-import browser from 'webextension-polyfill';
 
 interface Props {
   value: number;
@@ -16,21 +14,13 @@ function SettingsPopupInlineMenuTabPanel(props: Props) {
   const { value, index } = props;
 
   const [t] = useTranslation('global');
-  const { sizeHandler } = useCustomStyle();
 
   const [settings, setSettings] = useState<Settings>(new Settings());
   const [currentUrl, setCurrentUrl] = useState<string | undefined>('Loading...');
-  const [commands, setCommands] = useState<browser.Commands.Command[]>([]);
 
   useEffect(() => {
     getStoredSettings();
-    getCommands();
   }, []);
-
-  async function getCommands() {
-    const commandList = await browser.commands.getAll();
-    setCommands(commandList);
-  }
 
   async function getStoredSettings() {
     const stored = await SettingsStore.getSettings();
@@ -176,8 +166,8 @@ function SettingsPopupInlineMenuTabPanel(props: Props) {
 
   return (
     <TabPanel value={value} index={index}>
-      <Box style={{ overflowY: 'auto', height: '350px', overflowWrap: 'anywhere' }}>
-        <List sx={{ width: sizeHandler.getSettingsPopupTabPanelsWidth(), pt: 0 }}>
+      <Box sx={{ width: '100%', minHeight: 350, overflowWrap: 'anywhere' }}>
+        <List sx={{ width: '100%', pt: 0 }}>
           <FormGroup>
             <ListItem sx={{ p: '2px' }}>
               <FormControlLabel
