@@ -56,7 +56,7 @@
     "@fontsource/roboto": "^4.5.8",
     "@mui/icons-material": "^5.10.3",
     "@mui/material": "^5.10.3",
-    "i18next": "^23.5.1",
+    "i18next": "^27.2.6",
     "lodash.debounce": "^4.0.8",
     "otpauth": "^8.0.2",
     "react": "^18.2.0",
